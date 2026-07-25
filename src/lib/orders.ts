@@ -186,6 +186,30 @@ export async function fetchTodayOrders(): Promise<{
   return fetchOrdersSince(startOfLocalDay().toISOString())
 }
 
+/** Columns that exist on the original table (safe without migration). */
+const ORDER_SELECT_BASE =
+  'id,table_number,items,total,status,created_at,completed_at,completed_by'
+
+/** Full select after MIGRATION_V2.sql */
+const ORDER_SELECT_FULL = `${ORDER_SELECT_BASE},archived_at`
+
+let schemaSupportsArchive: boolean | null = null
+
+/** Detect whether archived_at exists (cached). */
+export async function detectArchiveSupport(): Promise<boolean> {
+  if (schemaSupportsArchive !== null) return schemaSupportsArchive
+  if (!supabase) {
+    schemaSupportsArchive = true
+    return true
+  }
+  const { error } = await supabase
+    .from('orders')
+    .select('archived_at')
+    .limit(1)
+  schemaSupportsArchive = !error
+  return schemaSupportsArchive
+}
+
 export async function fetchOrdersSince(sinceIso: string): Promise<{
   data: Order[]
   error: string | null
@@ -200,9 +224,10 @@ export async function fetchOrdersSince(sinceIso: string): Promise<{
     return { data: list, error: null }
   }
 
+  const hasArchive = await detectArchiveSupport()
   const { data, error } = await supabase
     .from('orders')
-    .select('*')
+    .select(hasArchive ? ORDER_SELECT_FULL : ORDER_SELECT_BASE)
     .gte('created_at', sinceIso)
     .order('created_at', { ascending: false })
     .limit(3000)
@@ -225,9 +250,18 @@ export async function fetchArchivedOrders(): Promise<{
     return { data: list, error: null }
   }
 
+  const hasArchive = await detectArchiveSupport()
+  if (!hasArchive) {
+    return {
+      data: [],
+      error:
+        'Kolona archived_at mungon. Ekzekuto këtë në SQL Editor: ALTER TABLE orders ADD COLUMN IF NOT EXISTS archived_at timestamptz;',
+    }
+  }
+
   const { data, error } = await supabase
     .from('orders')
-    .select('*')
+    .select(ORDER_SELECT_FULL)
     .not('archived_at', 'is', null)
     .order('archived_at', { ascending: false })
     .limit(500)
@@ -246,8 +280,37 @@ async function patchOrder(
     )
     return { error: null }
   }
-  const { error } = await supabase.from('orders').update(patch).eq('id', orderId)
-  return { error: error?.message ?? null }
+
+  // Drop archive fields if column not migrated yet
+  const hasArchive = await detectArchiveSupport()
+  const safePatch: Record<string, unknown> = { ...patch }
+  if (!hasArchive) {
+    delete safePatch.archived_at
+  }
+
+  const { error } = await supabase.from('orders').update(safePatch).eq('id', orderId)
+  if (!error) return { error: null }
+
+  // Retry with only status if optional columns missing
+  if (
+    error.message.includes('archived_at') ||
+    error.message.includes('completed_at') ||
+    error.message.includes('completed_by') ||
+    error.message.includes('cancelled')
+  ) {
+    if (typeof safePatch.status === 'string') {
+      const status =
+        safePatch.status === 'cancelled' ? 'done' : (safePatch.status as string)
+      const { error: e2 } = await supabase
+        .from('orders')
+        .update({ status })
+        .eq('id', orderId)
+      if (!e2) return { error: null }
+      return { error: e2.message }
+    }
+  }
+
+  return { error: error.message }
 }
 
 export async function markOrderDone(
@@ -273,10 +336,21 @@ export async function cancelOrder(
 }
 
 export async function archiveOrder(orderId: string): Promise<{ error: string | null }> {
+  const hasArchive = await detectArchiveSupport()
+  if (!hasArchive) {
+    return {
+      error:
+        'Arkiva nuk është gati. Në Supabase SQL Editor ekzekuto: ALTER TABLE orders ADD COLUMN IF NOT EXISTS archived_at timestamptz;',
+    }
+  }
   return patchOrder(orderId, { archived_at: new Date().toISOString() })
 }
 
 export async function restoreOrder(orderId: string): Promise<{ error: string | null }> {
+  const hasArchive = await detectArchiveSupport()
+  if (!hasArchive) {
+    return { error: 'Kolona archived_at mungon. Ekzekuto MIGRATION_V2.sql.' }
+  }
   return patchOrder(orderId, { archived_at: null })
 }
 
@@ -306,6 +380,9 @@ export async function purgeOldArchives(): Promise<{
     writeDemoOrders(after)
     return { removed: before.length - after.length, error: null }
   }
+
+  const hasArchive = await detectArchiveSupport()
+  if (!hasArchive) return { removed: 0, error: null }
 
   const { data, error } = await supabase
     .from('orders')
