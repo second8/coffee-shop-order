@@ -2,14 +2,13 @@
 
 Dashboard: https://coffee-shop-order-olive.vercel.app/dashboard
 
-| Name | Email | Password | Role |
-|------|--------|----------|------|
-| Punëtor 1 | `worker1@pristinamuffins.local` | `Punetor1-Shop!` | worker |
-| Punëtor 2 | `worker2@pristinamuffins.local` | `Punetor2-Shop!` | worker |
-| Punëtor 3 | `worker3@pristinamuffins.local` | `Punetor3-Shop!` | worker |
-| Punëtor 4 | `worker4@pristinamuffins.local` | `Punetor4-Shop!` | worker |
+| Name | Email | Password |
+|------|--------|----------|
+| Punëtor 1 | `worker1@pristinamuffins.local` | `Kafi-Blue7!mX` |
+| Punëtor 2 | `worker2@pristinamuffins.local` | `Lule#River92q` |
+| Punëtor 3 | `worker3@pristinamuffins.local` | `MangoNight4w!` |
+| Punëtor 4 | `worker4@pristinamuffins.local` | `Zjarr-Oak81pT` |
 
-**Admin** (you): `contact@secondeight.net` + your password
+Each password is very different so they won’t mix them up.
 
-Workers only see the live order board (light theme).  
-Admin sees dark theme + sales, speed, team, archive.
+**Admin:** `contact@secondeight.net` + your password
