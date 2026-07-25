@@ -571,6 +571,148 @@ code {
   margin: 0;
 }
 
+/* ——— QR print page ——— */
+
+.qr-print-page {
+  min-height: 100dvh;
+  background: #f6f1e8;
+  color: var(--ink);
+  padding: 1.25rem;
+}
+
+.qr-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.qr-toolbar h1 {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 400;
+  margin-bottom: 0.35rem;
+}
+
+.qr-toolbar p {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  max-width: 36rem;
+  line-height: 1.45;
+}
+
+.qr-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: flex-end;
+}
+
+.qr-count-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.qr-count-label input {
+  width: 5rem;
+  min-height: 44px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  padding: 0.4rem 0.6rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.qr-loading {
+  text-align: center;
+  color: var(--ink-muted);
+  padding: 3rem;
+}
+
+.qr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.qr-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem 0.85rem 0.85rem;
+  text-align: center;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.qr-shop {
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 0.25rem;
+}
+
+.qr-table {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 400;
+  margin: 0 0 0.65rem;
+}
+
+.qr-card img {
+  width: 100%;
+  max-width: 160px;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.qr-hint {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin: 0.5rem 0 0.25rem;
+}
+
+.qr-url {
+  font-size: 0.55rem;
+  color: var(--ink-muted);
+  word-break: break-all;
+  line-height: 1.3;
+  margin: 0;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .qr-print-page {
+    padding: 0;
+    background: #fff;
+  }
+
+  .qr-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+  }
+
+  .qr-card {
+    box-shadow: none;
+    border: 1px solid #ccc;
+  }
+}
+
 /* Sticky cart bar */
 
 .cart-bar {

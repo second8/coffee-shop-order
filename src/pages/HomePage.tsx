@@ -18,6 +18,9 @@ export default function HomePage() {
           <Link className="btn btn-secondary btn-block" to="/dashboard">
             {sq.homeStaff}
           </Link>
+          <Link className="btn btn-secondary btn-block" to="/qr">
+            Kodet QR (30 tavolina)
+          </Link>
         </div>
 
         {!isSupabaseConfigured && (
