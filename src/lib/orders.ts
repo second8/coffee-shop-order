@@ -225,15 +225,16 @@ export async function fetchOrdersSince(sinceIso: string): Promise<{
   }
 
   const hasArchive = await detectArchiveSupport()
+  const cols = hasArchive ? ORDER_SELECT_FULL : ORDER_SELECT_BASE
   const { data, error } = await supabase
     .from('orders')
-    .select(hasArchive ? ORDER_SELECT_FULL : ORDER_SELECT_BASE)
+    .select(cols)
     .gte('created_at', sinceIso)
     .order('created_at', { ascending: false })
     .limit(3000)
 
   if (error) return { data: [], error: error.message }
-  return { data: (data as Order[]) ?? [], error: null }
+  return { data: (data as unknown as Order[]) ?? [], error: null }
 }
 
 export async function fetchArchivedOrders(): Promise<{
@@ -267,7 +268,7 @@ export async function fetchArchivedOrders(): Promise<{
     .limit(500)
 
   if (error) return { data: [], error: error.message }
-  return { data: (data as Order[]) ?? [], error: null }
+  return { data: (data as unknown as Order[]) ?? [], error: null }
 }
 
 async function patchOrder(
