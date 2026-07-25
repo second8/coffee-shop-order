@@ -2,6 +2,8 @@
 
 Self-service table ordering: customers scan a QR code, browse the menu on their phone, and place an order. Staff see new orders instantly on a dashboard behind the bar.
 
+**Live:** https://coffee-shop-order-olive.vercel.app/
+
 ## Stack
 
 - **Frontend:** React + Vite + TypeScript + React Router

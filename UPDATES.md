@@ -1,5 +1,17 @@
 # How updates work (easy path)
 
+## Live site
+
+**Production URL:** https://coffee-shop-order-olive.vercel.app/
+
+| Path | Use |
+|------|-----|
+| `/` | Home |
+| `/order?table=3` | Customer menu (example table 3) |
+| `/dashboard` | Staff board (PIN `197951`) |
+
+GitHub: https://github.com/second8/coffee-shop-order  
+
 You do **not** need to give me permanent access to Vercel or Supabase.
 
 ## Default workflow (recommended)
