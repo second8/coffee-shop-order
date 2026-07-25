@@ -25,31 +25,19 @@ export default function OrderPage() {
     total: number
   } | null>(null)
 
-  const categories = menu.categories
-
   const handleSubmit = async () => {
     if (cart.items.length === 0 || submitting) return
     setSubmitting(true)
     setSubmitError(null)
-
     const { error } = await createOrder(tableNumber, cart.items, cart.total)
-
     setSubmitting(false)
-
     if (error) {
       setSubmitError(error)
       return
     }
-
     setLastOrder({ items: cart.items, total: cart.total })
     cart.clear()
     setScreen('confirmation')
-  }
-
-  const startNewOrder = () => {
-    setLastOrder(null)
-    setSubmitError(null)
-    setScreen('menu')
   }
 
   if (!hasValidTable) {
@@ -94,7 +82,11 @@ export default function OrderPage() {
           <button
             type="button"
             className="btn btn-primary btn-block"
-            onClick={startNewOrder}
+            onClick={() => {
+              setLastOrder(null)
+              setSubmitError(null)
+              setScreen('menu')
+            }}
           >
             {sq.orderAgain}
           </button>
@@ -130,22 +122,22 @@ export default function OrderPage() {
                   <div className="review-item-info">
                     <span className="review-item-name">{item.name}</span>
                     <span className="review-item-price">
-                      {formatEuro(item.price)} {sq.each}
+                      {formatEuro(item.price)}
                     </span>
                   </div>
-                  <div className="qty-controls">
+                  <div className="qty-controls qty-controls-lg">
                     <button
                       type="button"
-                      className="qty-btn"
+                      className="qty-btn qty-btn-lg"
                       aria-label={`Ul ${item.name}`}
                       onClick={() => cart.removeItem(item.name)}
                     >
                       −
                     </button>
-                    <span className="qty-value">{item.quantity}</span>
+                    <span className="qty-value qty-value-lg">{item.quantity}</span>
                     <button
                       type="button"
-                      className="qty-btn"
+                      className="qty-btn qty-btn-lg"
                       aria-label={`Shto ${item.name}`}
                       onClick={() =>
                         cart.addItem({ name: item.name, price: item.price })
@@ -161,7 +153,6 @@ export default function OrderPage() {
               ))}
             </ul>
           )}
-
           {submitError && <p className="form-error">{submitError}</p>}
         </main>
 
@@ -173,7 +164,7 @@ export default function OrderPage() {
             </div>
             <button
               type="button"
-              className="btn btn-primary btn-block"
+              className="btn btn-primary btn-block btn-lg"
               disabled={submitting}
               onClick={handleSubmit}
             >
@@ -203,14 +194,14 @@ export default function OrderPage() {
       </header>
 
       <main className="menu-main">
-        {categories.map((category) => (
+        {menu.categories.map((category) => (
           <section key={category.name} className="menu-section">
             <h2 className="menu-category">{category.name}</h2>
             <ul className="menu-list">
               {category.items.map((item) => {
                 const qty = cart.getQuantity(item.name)
                 return (
-                  <li key={item.name}>
+                  <li key={item.name} className="menu-row">
                     <button
                       type="button"
                       className={`menu-item ${qty > 0 ? 'is-selected' : ''}`}
@@ -230,23 +221,18 @@ export default function OrderPage() {
                       <div className="menu-item-actions">
                         <button
                           type="button"
-                          className="qty-btn qty-btn-sm"
+                          className="qty-btn qty-btn-lg"
                           aria-label={`Hiq ${item.name}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            cart.removeItem(item.name)
-                          }}
+                          onClick={() => cart.removeItem(item.name)}
                         >
                           −
                         </button>
+                        <span className="qty-value qty-value-lg">{qty}</span>
                         <button
                           type="button"
-                          className="qty-btn qty-btn-sm"
+                          className="qty-btn qty-btn-lg"
                           aria-label={`Shto ${item.name}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            cart.addItem(item)
-                          }}
+                          onClick={() => cart.addItem(item)}
                         >
                           +
                         </button>

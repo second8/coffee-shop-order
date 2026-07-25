@@ -23,21 +23,11 @@ export default function HomePage() {
           </Link>
         </div>
 
-        <div className={`home-mode ${isSupabaseConfigured ? 'is-live' : 'is-demo'}`}>
-          {isSupabaseConfigured ? (
-            <>
-              <strong>Live</strong> — {sq.homeLive}
-            </>
-          ) : (
-            <>
-              <strong>Demo</strong> — {sq.homeDemo}
-              <br />
-              Admin: admin@demo.local / admin
-              <br />
-              Worker: worker@demo.local / worker
-            </>
-          )}
-        </div>
+        {!isSupabaseConfigured && (
+          <div className="home-mode is-demo">
+            <strong>Demo</strong> — {sq.homeDemo}
+          </div>
+        )}
       </div>
     </div>
   )

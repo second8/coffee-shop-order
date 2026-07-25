@@ -11,37 +11,44 @@ import {
   signOut,
 } from '../lib/auth'
 import {
+  archiveOrder,
   buildItemSales,
+  buildPeakHours,
   buildSpeedStats,
+  buildTableStats,
+  buildWorkerStats,
+  cancelOrder,
+  deleteOrderForever,
+  fetchArchivedOrders,
   fetchOrdersSince,
+  fetchStaffNameMap,
+  fetchStaffSessions,
   fetchTodayOrders,
   formatDuration,
+  isActiveOrder,
   isSupabaseConfigured,
   markOrderDone,
   ordersToCsv,
+  purgeOldArchives,
+  restoreOrder,
+  sessionDurationSeconds,
   subscribeDemoOrders,
   supabase,
 } from '../lib/orders'
 import { formatEuro, formatRelativeTime, formatTime } from '../utils/format'
 import { sq } from '../i18n/sq'
-import type { Order, StaffProfile } from '../types'
+import type { Order, StaffProfile, StaffSession } from '../types'
 
-type Tab = 'live' | 'sales' | 'speed'
+type Tab = 'live' | 'sales' | 'speed' | 'team' | 'archive'
 type SalesRange = 'today' | '7d' | '30d' | '90d'
 
 function rangeStart(range: SalesRange): Date {
   const d = new Date()
   d.setHours(0, 0, 0, 0)
   if (range === 'today') return d
-  if (range === '7d') {
-    d.setDate(d.getDate() - 6)
-    return d
-  }
-  if (range === '30d') {
-    d.setDate(d.getDate() - 29)
-    return d
-  }
-  d.setDate(d.getDate() - 89)
+  if (range === '7d') d.setDate(d.getDate() - 6)
+  else if (range === '30d') d.setDate(d.getDate() - 29)
+  else d.setDate(d.getDate() - 89)
   return d
 }
 
@@ -79,32 +86,43 @@ function downloadText(filename: string, text: string) {
 
 function OrderCard({
   order,
+  staffName,
   onDone,
-  dimmed,
+  onCancel,
+  onArchive,
+  onRestore,
+  onDelete,
+  variant,
 }: {
   order: Order
+  staffName?: string
   onDone?: (id: string) => void
-  dimmed?: boolean
+  onCancel?: (id: string) => void
+  onArchive?: (id: string) => void
+  onRestore?: (id: string) => void
+  onDelete?: (id: string) => void
+  variant: 'pending' | 'done' | 'cancelled' | 'archive'
 }) {
   const [, setTick] = useState(0)
-
   useEffect(() => {
-    if (dimmed) return
+    if (variant !== 'pending') return
     const id = window.setInterval(() => setTick((t) => t + 1), 30_000)
     return () => window.clearInterval(id)
-  }, [dimmed])
+  }, [variant])
 
   return (
-    <article className={`order-card ${dimmed ? 'is-done' : ''}`}>
+    <article
+      className={`order-card ${variant === 'pending' ? '' : 'is-done'} ${variant === 'cancelled' ? 'is-cancelled' : ''} ${variant === 'archive' ? 'is-archive' : ''}`}
+    >
       <div className="order-card-top">
         <h2 className="order-card-table">
           {sq.table} {order.table_number}
         </h2>
         <div className="order-card-meta">
           <span className="order-card-time">
-            {dimmed
-              ? formatTime(order.created_at)
-              : formatRelativeTime(order.created_at)}
+            {variant === 'pending'
+              ? formatRelativeTime(order.created_at)
+              : formatTime(order.completed_at || order.created_at)}
           </span>
           <span className="order-card-total">
             {formatEuro(Number(order.total))}
@@ -121,16 +139,82 @@ function OrderCard({
         ))}
       </ul>
 
-      {!dimmed && onDone && (
-        <button
-          type="button"
-          className="btn btn-done"
-          onClick={() => onDone(order.id)}
-        >
-          {sq.markDone}
-        </button>
+      {staffName && variant !== 'pending' && (
+        <p className="order-card-by">
+          {sq.by} <strong>{staffName}</strong>
+        </p>
       )}
+
+      <div className="order-card-actions">
+        {variant === 'pending' && onDone && (
+          <button type="button" className="btn btn-done" onClick={() => onDone(order.id)}>
+            {sq.markDone}
+          </button>
+        )}
+        {variant === 'pending' && onCancel && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              if (window.confirm(sq.confirmCancel)) onCancel(order.id)
+            }}
+          >
+            {sq.cancel}
+          </button>
+        )}
+        {(variant === 'done' || variant === 'cancelled') && onArchive && (
+          <button type="button" className="btn btn-ghost" onClick={() => onArchive(order.id)}>
+            {sq.archive}
+          </button>
+        )}
+        {variant === 'archive' && onRestore && (
+          <button type="button" className="btn btn-ghost" onClick={() => onRestore(order.id)}>
+            {sq.restore}
+          </button>
+        )}
+        {variant === 'archive' && onDelete && (
+          <button
+            type="button"
+            className="btn btn-danger-ghost"
+            onClick={() => {
+              if (window.confirm(sq.confirmDelete)) onDelete(order.id)
+            }}
+          >
+            {sq.deleteForever}
+          </button>
+        )}
+      </div>
     </article>
+  )
+}
+
+function RangePills({
+  value,
+  onChange,
+}: {
+  value: SalesRange
+  onChange: (v: SalesRange) => void
+}) {
+  return (
+    <div className="range-pills" role="group">
+      {(
+        [
+          ['today', sq.rangeToday],
+          ['7d', sq.range7],
+          ['30d', sq.range30],
+          ['90d', sq.range90],
+        ] as const
+      ).map(([key, label]) => (
+        <button
+          key={key}
+          type="button"
+          className={`range-pill ${value === key ? 'is-active' : ''}`}
+          onClick={() => onChange(key)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -143,9 +227,13 @@ export default function DashboardPage() {
   const [loggingIn, setLoggingIn] = useState(false)
 
   const [orders, setOrders] = useState<Order[]>([])
+  const [archive, setArchive] = useState<Order[]>([])
+  const [sessions, setSessions] = useState<StaffSession[]>([])
+  const [nameMap, setNameMap] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCompleted, setShowCompleted] = useState(true)
+  const [showCancelled, setShowCancelled] = useState(true)
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [tab, setTab] = useState<Tab>('live')
   const [salesRange, setSalesRange] = useState<SalesRange>('today')
@@ -155,6 +243,14 @@ export default function DashboardPage() {
   const readyForSoundRef = useRef(false)
 
   const isAdmin = profile?.role === 'admin'
+
+  const staffLabel = useCallback(
+    (id?: string | null) => {
+      if (!id) return undefined
+      return nameMap[id] || sq.unknownStaff
+    },
+    [nameMap]
+  )
 
   const applySession = useCallback(async (session: Session | null) => {
     if (!session?.user) {
@@ -167,7 +263,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false
-
     void (async () => {
       if (isDemoAuth()) {
         if (!cancelled) {
@@ -176,8 +271,6 @@ export default function DashboardPage() {
         }
         return
       }
-
-      // Refresh so JWT picks up admin role from app_metadata
       let session = await refreshSession()
       if (!session) session = await getSession()
       if (!cancelled) {
@@ -185,11 +278,9 @@ export default function DashboardPage() {
         setAuthLoading(false)
       }
     })()
-
     const unsub = onAuthChange((session) => {
       void applySession(session)
     })
-
     return () => {
       cancelled = true
       unsub()
@@ -225,9 +316,8 @@ export default function DashboardPage() {
 
   const loadOrders = useCallback(async () => {
     const { data, error: fetchError } = await fetchTodayOrders()
-    if (fetchError) {
-      setError(fetchError)
-    } else {
+    if (fetchError) setError(fetchError)
+    else {
       setError(null)
       setOrders(data)
       knownIdsRef.current = new Set(data.map((o) => o.id))
@@ -238,71 +328,76 @@ export default function DashboardPage() {
     }, 500)
   }, [])
 
+  const loadNames = useCallback(async () => {
+    const map = await fetchStaffNameMap()
+    if (profile) {
+      map[profile.id] = profile.display_name || profile.email.split('@')[0] || profile.id
+    }
+    setNameMap(map)
+  }, [profile])
+
   const loadSales = useCallback(async (range: SalesRange) => {
     setSalesLoading(true)
-    const { data, error: fetchError } = await fetchOrdersSince(
-      rangeStart(range).toISOString()
-    )
-    if (fetchError) {
-      setError(fetchError)
-    } else {
+    const since = rangeStart(range).toISOString()
+    const [{ data, error: fetchError }, sessionsRes] = await Promise.all([
+      fetchOrdersSince(since),
+      fetchStaffSessions(since),
+    ])
+    if (fetchError) setError(fetchError)
+    else {
       setError(null)
       setSalesOrders(data)
     }
+    if (!sessionsRes.error) setSessions(sessionsRes.data)
     setSalesLoading(false)
+  }, [])
+
+  const loadArchive = useCallback(async () => {
+    await purgeOldArchives()
+    const { data, error: err } = await fetchArchivedOrders()
+    if (err) setError(err)
+    else setArchive(data)
   }, [])
 
   useEffect(() => {
     if (!profile) return
     void loadOrders()
-  }, [profile, loadOrders])
+    void loadNames()
+  }, [profile, loadOrders, loadNames])
 
   useEffect(() => {
     if (!profile || !isAdmin) return
-    if (tab !== 'sales' && tab !== 'speed') return
-    void loadSales(salesRange)
-  }, [profile, isAdmin, tab, salesRange, loadSales])
+    if (tab === 'sales' || tab === 'speed' || tab === 'team') {
+      void loadSales(salesRange)
+    }
+    if (tab === 'archive') void loadArchive()
+  }, [profile, isAdmin, tab, salesRange, loadSales, loadArchive])
 
   useEffect(() => {
     if (!profile || isSupabaseConfigured) return
-
-    const unsub = subscribeDemoOrders(() => {
-      void (async () => {
-        const { data } = await fetchTodayOrders()
-        const prevIds = knownIdsRef.current
-        const newPending = data.filter(
-          (o) => o.status === 'pending' && !prevIds.has(o.id)
-        )
-        if (readyForSoundRef.current && soundEnabled && newPending.length > 0) {
-          playNotificationSound()
-        }
-        knownIdsRef.current = new Set(data.map((o) => o.id))
-        setOrders(data)
-        if (isAdmin && (tab === 'sales' || tab === 'speed')) {
-          void loadSales(salesRange)
-        }
-      })()
+    return subscribeDemoOrders(() => {
+      void loadOrders()
+      if (isAdmin && (tab === 'sales' || tab === 'speed' || tab === 'team')) {
+        void loadSales(salesRange)
+      }
+      if (isAdmin && tab === 'archive') void loadArchive()
     })
-
-    return unsub
-  }, [profile, soundEnabled, isAdmin, tab, salesRange, loadSales])
+  }, [profile, isAdmin, tab, salesRange, loadOrders, loadSales, loadArchive])
 
   useEffect(() => {
     if (!profile || !supabase) return
-
     const client = supabase
     const channel = client
-      .channel('orders-realtime')
+      .channel('orders-realtime-v2')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
             const order = payload.new as Order
-            const created = new Date(order.created_at)
-            const startOfDay = new Date()
-            startOfDay.setHours(0, 0, 0, 0)
-            if (created >= startOfDay) {
+            const start = new Date()
+            start.setHours(0, 0, 0, 0)
+            if (new Date(order.created_at) >= start && !order.archived_at) {
               setOrders((prev) => {
                 if (prev.some((o) => o.id === order.id)) return prev
                 return [order, ...prev]
@@ -317,69 +412,182 @@ export default function DashboardPage() {
             }
             knownIdsRef.current.add(order.id)
           }
-
           if (payload.eventType === 'UPDATE') {
             const order = payload.new as Order
-            setOrders((prev) =>
-              prev.map((o) => (o.id === order.id ? order : o))
-            )
+            setOrders((prev) => {
+              if (order.archived_at) return prev.filter((o) => o.id !== order.id)
+              const exists = prev.some((o) => o.id === order.id)
+              if (!exists) return [order, ...prev]
+              return prev.map((o) => (o.id === order.id ? order : o))
+            })
+            setArchive((prev) => {
+              if (order.archived_at) {
+                const exists = prev.some((o) => o.id === order.id)
+                return exists
+                  ? prev.map((o) => (o.id === order.id ? order : o))
+                  : [order, ...prev]
+              }
+              return prev.filter((o) => o.id !== order.id)
+            })
           }
-
           if (payload.eventType === 'DELETE') {
             const old = payload.old as { id?: string }
             if (old.id) {
               setOrders((prev) => prev.filter((o) => o.id !== old.id))
-              knownIdsRef.current.delete(old.id)
+              setArchive((prev) => prev.filter((o) => o.id !== old.id))
             }
           }
         }
       )
       .subscribe()
-
     return () => {
       void client.removeChannel(channel)
     }
   }, [profile, soundEnabled])
 
+  const patchLocal = (id: string, patch: Partial<Order>) => {
+    setOrders((prev) =>
+      prev
+        .map((o) => (o.id === id ? { ...o, ...patch } : o))
+        .filter((o) => !o.archived_at)
+    )
+  }
+
   const handleDone = async (id: string) => {
     const now = new Date().toISOString()
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === id
-          ? {
-              ...o,
-              status: 'done' as const,
-              completed_at: now,
-              completed_by: profile?.id ?? null,
-            }
-          : o
-      )
-    )
-    const { error: updateError } = await markOrderDone(id, profile?.id)
-    if (updateError) {
-      setError(updateError)
+    patchLocal(id, {
+      status: 'done',
+      completed_at: now,
+      completed_by: profile?.id ?? null,
+    })
+    const { error: err } = await markOrderDone(id, profile?.id)
+    if (err) {
+      setError(err)
       void loadOrders()
     }
   }
 
+  const handleCancel = async (id: string) => {
+    const now = new Date().toISOString()
+    patchLocal(id, {
+      status: 'cancelled',
+      completed_at: now,
+      completed_by: profile?.id ?? null,
+    })
+    const { error: err } = await cancelOrder(id, profile?.id)
+    if (err) {
+      setError(err + ' — ' + sq.migrationHint)
+      void loadOrders()
+    }
+  }
+
+  const handleArchive = async (id: string) => {
+    const now = new Date().toISOString()
+    const order = orders.find((o) => o.id === id)
+    setOrders((prev) => prev.filter((o) => o.id !== id))
+    if (order) setArchive((prev) => [{ ...order, archived_at: now }, ...prev])
+    const { error: err } = await archiveOrder(id)
+    if (err) {
+      setError(err + ' — ' + sq.migrationHint)
+      void loadOrders()
+    }
+  }
+
+  const handleRestore = async (id: string) => {
+    const order = archive.find((o) => o.id === id)
+    setArchive((prev) => prev.filter((o) => o.id !== id))
+    if (order) setOrders((prev) => [{ ...order, archived_at: null }, ...prev])
+    const { error: err } = await restoreOrder(id)
+    if (err) {
+      setError(err)
+      void loadArchive()
+      void loadOrders()
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    setArchive((prev) => prev.filter((o) => o.id !== id))
+    const { error: err } = await deleteOrderForever(id)
+    if (err) {
+      setError(err)
+      void loadArchive()
+    }
+  }
+
+  const handlePurge = async () => {
+    const { removed, error: err } = await purgeOldArchives()
+    if (err) setError(err)
+    else {
+      void loadArchive()
+      if (removed > 0) setError(null)
+    }
+  }
+
+  const activeOrders = useMemo(() => orders.filter(isActiveOrder), [orders])
+
   const pending = useMemo(
-    () => orders.filter((o) => o.status === 'pending'),
-    [orders]
+    () =>
+      activeOrders
+        .filter((o) => o.status === 'pending')
+        .sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        ),
+    [activeOrders]
   )
+
   const completed = useMemo(
-    () => orders.filter((o) => o.status === 'done'),
-    [orders]
+    () =>
+      activeOrders
+        .filter((o) => o.status === 'done')
+        .sort(
+          (a, b) =>
+            new Date(b.completed_at || b.created_at).getTime() -
+            new Date(a.completed_at || a.created_at).getTime()
+        ),
+    [activeOrders]
   )
+
+  const cancelled = useMemo(
+    () =>
+      activeOrders
+        .filter((o) => o.status === 'cancelled')
+        .sort(
+          (a, b) =>
+            new Date(b.completed_at || b.created_at).getTime() -
+            new Date(a.completed_at || a.created_at).getTime()
+        ),
+    [activeOrders]
+  )
+
   const dailyRevenue = useMemo(
-    () => orders.reduce((sum, o) => sum + Number(o.total), 0),
-    [orders]
+    () =>
+      activeOrders
+        .filter((o) => o.status === 'done')
+        .reduce((sum, o) => sum + Number(o.total), 0),
+    [activeOrders]
   )
+
+  const statsPool = salesOrders
   const salesRevenue = useMemo(
-    () => salesOrders.reduce((sum, o) => sum + Number(o.total), 0),
-    [salesOrders]
+    () =>
+      statsPool
+        .filter((o) => o.status === 'done')
+        .reduce((sum, o) => sum + Number(o.total), 0),
+    [statsPool]
   )
-  const itemSales = useMemo(() => buildItemSales(salesOrders), [salesOrders])
-  const speedStats = useMemo(() => buildSpeedStats(salesOrders), [salesOrders])
+  const doneCount = useMemo(
+    () => statsPool.filter((o) => o.status === 'done').length,
+    [statsPool]
+  )
+  const itemSales = useMemo(() => buildItemSales(statsPool), [statsPool])
+  const speedStats = useMemo(() => buildSpeedStats(statsPool), [statsPool])
+  const tableStats = useMemo(() => buildTableStats(statsPool), [statsPool])
+  const workerStats = useMemo(
+    () => buildWorkerStats(statsPool, nameMap),
+    [statsPool, nameMap]
+  )
+  const peakHours = useMemo(() => buildPeakHours(statsPool), [statsPool])
 
   if (authLoading) {
     return (
@@ -421,19 +629,10 @@ export default function DashboardPage() {
             required
           />
           {loginError && <p className="form-error">{loginError}</p>}
-          <button
-            type="submit"
-            className="btn btn-primary btn-block"
-            disabled={loggingIn}
-          >
+          <button type="submit" className="btn btn-primary btn-block" disabled={loggingIn}>
             {loggingIn ? sq.signingIn : sq.signIn}
           </button>
           <p className="login-help">{sq.needAccount}</p>
-          {isDemoAuth() && (
-            <p className="login-help">
-              Demo: admin@demo.local / admin · worker@demo.local / worker
-            </p>
-          )}
         </form>
       </div>
     )
@@ -456,7 +655,9 @@ export default function DashboardPage() {
             <>
               <div className="stat">
                 <span className="stat-label">{sq.today}</span>
-                <span className="stat-value">{orders.length}</span>
+                <span className="stat-value">
+                  {activeOrders.filter((o) => o.status === 'done').length}
+                </span>
               </div>
               <div className="stat">
                 <span className="stat-label">{sq.revenue}</span>
@@ -468,7 +669,6 @@ export default function DashboardPage() {
             type="button"
             className={`sound-toggle ${soundEnabled ? 'is-on' : ''}`}
             onClick={() => setSoundEnabled((v) => !v)}
-            title={soundEnabled ? sq.soundOn : sq.soundOff}
             aria-label={soundEnabled ? sq.soundOn : sq.soundOff}
           >
             {soundEnabled ? '🔔' : '🔕'}
@@ -479,7 +679,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <nav className="dashboard-tabs" aria-label="Seksionet">
+      <nav className="dashboard-tabs">
         <button
           type="button"
           className={`dash-tab ${tab === 'live' ? 'is-active' : ''}`}
@@ -503,6 +703,20 @@ export default function DashboardPage() {
             >
               {sq.performance}
             </button>
+            <button
+              type="button"
+              className={`dash-tab ${tab === 'team' ? 'is-active' : ''}`}
+              onClick={() => setTab('team')}
+            >
+              {sq.team}
+            </button>
+            <button
+              type="button"
+              className={`dash-tab ${tab === 'archive' ? 'is-active' : ''}`}
+              onClick={() => setTab('archive')}
+            >
+              {sq.archiveTab}
+            </button>
           </>
         )}
       </nav>
@@ -512,11 +726,7 @@ export default function DashboardPage() {
           <strong>Demo</strong> — {sq.demoBanner}
         </div>
       )}
-
-      {!isAdmin && (
-        <div className="banner banner-info">{sq.onlyAdmin}</div>
-      )}
-
+      {!isAdmin && <div className="banner banner-info">{sq.onlyAdmin}</div>}
       {error && <div className="banner banner-error">{error}</div>}
 
       <main className="dashboard-main">
@@ -534,7 +744,9 @@ export default function DashboardPage() {
                     <OrderCard
                       key={order.id}
                       order={order}
+                      variant="pending"
                       onDone={handleDone}
+                      onCancel={handleCancel}
                     />
                   ))}
                 </div>
@@ -557,9 +769,45 @@ export default function DashboardPage() {
                 (completed.length === 0 ? (
                   <p className="empty-state">{sq.noCompleted}</p>
                 ) : (
-                  <div className="order-grid order-grid-done">
+                  <div className="order-list">
                     {completed.map((order) => (
-                      <OrderCard key={order.id} order={order} dimmed />
+                      <OrderCard
+                        key={order.id}
+                        order={order}
+                        variant="done"
+                        staffName={staffLabel(order.completed_by)}
+                        onArchive={isAdmin ? handleArchive : undefined}
+                      />
+                    ))}
+                  </div>
+                ))}
+            </section>
+
+            <section className="dashboard-section">
+              <button
+                type="button"
+                className="section-toggle"
+                onClick={() => setShowCancelled((v) => !v)}
+              >
+                <h2 className="section-label">
+                  {sq.cancelledToday}
+                  <span className="section-count">{cancelled.length}</span>
+                </h2>
+                <span className="chevron">{showCancelled ? '▾' : '▸'}</span>
+              </button>
+              {showCancelled &&
+                (cancelled.length === 0 ? (
+                  <p className="empty-state">{sq.noCancelled}</p>
+                ) : (
+                  <div className="order-list">
+                    {cancelled.map((order) => (
+                      <OrderCard
+                        key={order.id}
+                        order={order}
+                        variant="cancelled"
+                        staffName={staffLabel(order.completed_by)}
+                        onArchive={isAdmin ? handleArchive : undefined}
+                      />
                     ))}
                   </div>
                 ))}
@@ -570,45 +818,23 @@ export default function DashboardPage() {
         {tab === 'sales' && isAdmin && (
           <section className="dashboard-section sales-section">
             <div className="sales-toolbar">
-              <div className="range-pills" role="group">
-                {(
-                  [
-                    ['today', sq.rangeToday],
-                    ['7d', sq.range7],
-                    ['30d', sq.range30],
-                    ['90d', sq.range90],
-                  ] as const
-                ).map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`range-pill ${salesRange === key ? 'is-active' : ''}`}
-                    onClick={() => setSalesRange(key)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <RangePills value={salesRange} onChange={setSalesRange} />
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
-                disabled={salesOrders.length === 0}
+                disabled={statsPool.length === 0}
                 onClick={() =>
-                  downloadText(
-                    `porosi-${salesRange}.csv`,
-                    ordersToCsv(salesOrders)
-                  )
+                  downloadText(`porosi-${salesRange}.csv`, ordersToCsv(statsPool))
                 }
               >
                 {sq.downloadCsv}
               </button>
             </div>
-
             <div className="sales-summary">
               <div className="sales-stat-card">
                 <span className="stat-label">{sq.orderCount}</span>
                 <span className="sales-stat-value">
-                  {salesLoading ? '…' : salesOrders.length}
+                  {salesLoading ? '…' : doneCount}
                 </span>
               </div>
               <div className="sales-stat-card">
@@ -620,17 +846,73 @@ export default function DashboardPage() {
               <div className="sales-stat-card">
                 <span className="stat-label">{sq.avgOrder}</span>
                 <span className="sales-stat-value">
-                  {salesLoading || salesOrders.length === 0
+                  {salesLoading || doneCount === 0
                     ? '—'
-                    : formatEuro(salesRevenue / salesOrders.length)}
+                    : formatEuro(salesRevenue / doneCount)}
                 </span>
               </div>
             </div>
 
+            <h2 className="section-label">{sq.tableStats}</h2>
+            {tableStats.length === 0 ? (
+              <p className="empty-state">{sq.noSales}</p>
+            ) : (
+              <div className="sales-table-wrap">
+                <table className="sales-table">
+                  <thead>
+                    <tr>
+                      <th>{sq.table}</th>
+                      <th>{sq.orderCount}</th>
+                      <th>{sq.rev}</th>
+                      <th>{sq.cancelled}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableStats.map((row) => (
+                      <tr key={row.table}>
+                        <td>
+                          {sq.table} {row.table}
+                        </td>
+                        <td>{row.orders}</td>
+                        <td>{formatEuro(row.revenue)}</td>
+                        <td>{row.cancelled}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <h2 className="section-label">{sq.peakHours}</h2>
+            {peakHours.length === 0 ? (
+              <p className="empty-state">{sq.noSales}</p>
+            ) : (
+              <div className="sales-table-wrap">
+                <table className="sales-table">
+                  <thead>
+                    <tr>
+                      <th>{sq.hour}</th>
+                      <th>{sq.count}</th>
+                      <th>{sq.rev}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {peakHours.slice(0, 8).map((row) => (
+                      <tr key={row.hour}>
+                        <td>
+                          {String(row.hour).padStart(2, '0')}:00
+                        </td>
+                        <td>{row.count}</td>
+                        <td>{formatEuro(row.revenue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             <h2 className="section-label">{sq.itemsSold}</h2>
-            {salesLoading ? (
-              <p className="empty-state">{sq.loading}</p>
-            ) : itemSales.length === 0 ? (
+            {itemSales.length === 0 ? (
               <p className="empty-state">{sq.noSales}</p>
             ) : (
               <div className="sales-table-wrap">
@@ -661,32 +943,13 @@ export default function DashboardPage() {
         {tab === 'speed' && isAdmin && (
           <section className="dashboard-section sales-section">
             <div className="sales-toolbar">
-              <div className="range-pills" role="group">
-                {(
-                  [
-                    ['today', sq.rangeToday],
-                    ['7d', sq.range7],
-                    ['30d', sq.range30],
-                    ['90d', sq.range90],
-                  ] as const
-                ).map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`range-pill ${salesRange === key ? 'is-active' : ''}`}
-                    onClick={() => setSalesRange(key)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <RangePills value={salesRange} onChange={setSalesRange} />
             </div>
-
             <div className="sales-summary">
               <div className="sales-stat-card">
                 <span className="stat-label">{sq.avgSpeed}</span>
                 <span className="sales-stat-value">
-                  {speedStats.avgSeconds === null
+                  {speedStats.avgSeconds == null
                     ? '—'
                     : formatDuration(Math.round(speedStats.avgSeconds))}
                 </span>
@@ -694,7 +957,7 @@ export default function DashboardPage() {
               <div className="sales-stat-card">
                 <span className="stat-label">{sq.medianSpeed}</span>
                 <span className="sales-stat-value">
-                  {speedStats.medianSeconds === null
+                  {speedStats.medianSeconds == null
                     ? '—'
                     : formatDuration(Math.round(speedStats.medianSeconds))}
                 </span>
@@ -707,20 +970,9 @@ export default function DashboardPage() {
                     : `${Math.round((speedStats.under5min / speedStats.count) * 100)}%`}
                 </span>
               </div>
-              <div className="sales-stat-card">
-                <span className="stat-label">{sq.under10}</span>
-                <span className="sales-stat-value">
-                  {speedStats.count === 0
-                    ? '—'
-                    : `${Math.round((speedStats.under10min / speedStats.count) * 100)}%`}
-                </span>
-              </div>
             </div>
-
             <h2 className="section-label">{sq.completionList}</h2>
-            {salesLoading ? (
-              <p className="empty-state">{sq.loading}</p>
-            ) : speedStats.samples.length === 0 ? (
+            {speedStats.samples.length === 0 ? (
               <p className="empty-state">{sq.noSpeedData}</p>
             ) : (
               <div className="sales-table-wrap">
@@ -729,23 +981,135 @@ export default function DashboardPage() {
                     <tr>
                       <th>{sq.table}</th>
                       <th>{sq.duration}</th>
+                      <th>{sq.by}</th>
                       <th>{sq.total}</th>
-                      <th>Ora</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {speedStats.samples.slice(0, 50).map(({ order, seconds }) => (
+                    {speedStats.samples.slice(0, 40).map(({ order, seconds }) => (
                       <tr key={order.id}>
                         <td>
                           {sq.table} {order.table_number}
                         </td>
                         <td>{formatDuration(seconds)}</td>
+                        <td>{staffLabel(order.completed_by) || '—'}</td>
                         <td>{formatEuro(Number(order.total))}</td>
-                        <td>{formatTime(order.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </section>
+        )}
+
+        {tab === 'team' && isAdmin && (
+          <section className="dashboard-section sales-section">
+            <div className="sales-toolbar">
+              <RangePills value={salesRange} onChange={setSalesRange} />
+            </div>
+
+            <h2 className="section-label">{sq.workerStats}</h2>
+            {workerStats.length === 0 ? (
+              <p className="empty-state">{sq.noSales}</p>
+            ) : (
+              <div className="sales-table-wrap">
+                <table className="sales-table">
+                  <thead>
+                    <tr>
+                      <th>{sq.by}</th>
+                      <th>{sq.finished}</th>
+                      <th>{sq.cancelled}</th>
+                      <th>{sq.avgTime}</th>
+                      <th>{sq.rev}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workerStats.map((w) => (
+                      <tr key={w.userId}>
+                        <td>{w.name}</td>
+                        <td>{w.done}</td>
+                        <td>{w.cancelled}</td>
+                        <td>
+                          {w.avgSeconds == null
+                            ? '—'
+                            : formatDuration(Math.round(w.avgSeconds))}
+                        </td>
+                        <td>{formatEuro(w.revenue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <h2 className="section-label">{sq.sessions}</h2>
+            {sessions.length === 0 ? (
+              <p className="empty-state">{sq.noSessions}</p>
+            ) : (
+              <div className="sales-table-wrap">
+                <table className="sales-table">
+                  <thead>
+                    <tr>
+                      <th>{sq.by}</th>
+                      <th>{sq.loggedIn}</th>
+                      <th>{sq.loggedOut}</th>
+                      <th>{sq.duration}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sessions.map((s) => {
+                      const secs = sessionDurationSeconds(s)
+                      return (
+                        <tr key={s.id}>
+                          <td>
+                            {s.display_name ||
+                              nameMap[s.user_id] ||
+                              s.user_id.slice(0, 8)}
+                          </td>
+                          <td>
+                            {formatTime(s.started_at)}{' '}
+                            <span className="muted-date">
+                              {new Date(s.started_at).toLocaleDateString()}
+                            </span>
+                          </td>
+                          <td>
+                            {s.ended_at ? formatTime(s.ended_at) : sq.stillActive}
+                          </td>
+                          <td>{secs == null ? '—' : formatDuration(secs)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="sales-footnote">{sq.migrationHint}</p>
+          </section>
+        )}
+
+        {tab === 'archive' && isAdmin && (
+          <section className="dashboard-section sales-section">
+            <div className="sales-toolbar">
+              <p className="archive-lead">{sq.archiveHint}</p>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={handlePurge}>
+                {sq.purgeWeek}
+              </button>
+            </div>
+            {archive.length === 0 ? (
+              <p className="empty-state">{sq.archiveEmpty}</p>
+            ) : (
+              <div className="order-list">
+                {archive.map((order) => (
+                  <OrderCard
+                    key={order.id}
+                    order={order}
+                    variant="archive"
+                    staffName={staffLabel(order.completed_by)}
+                    onRestore={handleRestore}
+                    onDelete={handleDelete}
+                  />
+                ))}
               </div>
             )}
           </section>

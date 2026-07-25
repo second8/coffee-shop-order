@@ -1,5 +1,10 @@
 import type { Session, User } from '@supabase/supabase-js'
-import { isSupabaseConfigured, supabase } from './orders'
+import {
+  endStaffSession,
+  isSupabaseConfigured,
+  startStaffSession,
+  supabase,
+} from './orders'
 import type { StaffProfile, StaffRole } from '../types'
 
 export type AuthState = {
@@ -46,18 +51,27 @@ export async function signInWithEmail(
       display_name: role === 'admin' ? 'Admin' : 'Punëtor',
     }
     sessionStorage.setItem(DEMO_SESSION_KEY, JSON.stringify(profile))
+    await startStaffSession(profile.id, profile.display_name)
     return { error: null }
   }
 
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email: email.trim(),
     password,
   })
   if (error) return { error: error.message }
+
+  if (data.user) {
+    const profile = await fetchStaffProfile(data.user)
+    if (profile) {
+      await startStaffSession(profile.id, profile.display_name)
+    }
+  }
   return { error: null }
 }
 
 export async function signOut(): Promise<void> {
+  await endStaffSession()
   if (!supabase) {
     sessionStorage.removeItem(DEMO_SESSION_KEY)
     return

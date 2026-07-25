@@ -14,7 +14,7 @@ export interface CartItem {
   quantity: number
 }
 
-export type OrderStatus = 'pending' | 'done'
+export type OrderStatus = 'pending' | 'done' | 'cancelled'
 
 export interface Order {
   id: string
@@ -25,6 +25,7 @@ export interface Order {
   created_at: string
   completed_at?: string | null
   completed_by?: string | null
+  archived_at?: string | null
 }
 
 export type StaffRole = 'admin' | 'worker'
@@ -34,4 +35,12 @@ export interface StaffProfile {
   email: string
   role: StaffRole
   display_name: string | null
+}
+
+export interface StaffSession {
+  id: string
+  user_id: string
+  display_name: string | null
+  started_at: string
+  ended_at: string | null
 }
