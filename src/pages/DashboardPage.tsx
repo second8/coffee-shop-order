@@ -639,7 +639,9 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="dashboard-page">
+    <div
+      className={`dashboard-page ${isAdmin ? 'theme-admin' : 'theme-worker'}`}
+    >
       <header className="dashboard-header">
         <div className="dashboard-header-left">
           <h1>{sq.orders}</h1>

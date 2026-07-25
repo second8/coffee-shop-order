@@ -7,9 +7,6 @@ export default function HomePage() {
   return (
     <div className="home-page">
       <div className="home-card">
-        <div className="home-mark" aria-hidden>
-          ☀
-        </div>
         <p className="home-kicker">{MENU_TITLE}</p>
         <h1>{SHOP_NAME}</h1>
         <p className="home-sub">{sq.homeTitle}</p>

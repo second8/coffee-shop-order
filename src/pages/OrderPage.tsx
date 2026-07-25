@@ -179,14 +179,9 @@ export default function OrderPage() {
   return (
     <div className={`order-page ${cart.itemCount > 0 ? 'has-cart-bar' : ''}`}>
       <header className="order-header">
-        <div className="order-brand">
-          <span className="order-brand-mark" aria-hidden>
-            ☀
-          </span>
-          <div className="order-brand-text">
-            <p className="order-menu-kicker">{MENU_TITLE}</p>
-            <h1 className="order-shop-name">{SHOP_NAME}</h1>
-          </div>
+        <div className="order-brand-text">
+          <p className="order-menu-kicker">{MENU_TITLE}</p>
+          <h1 className="order-shop-name">{SHOP_NAME}</h1>
         </div>
         <p className="order-table-label">
           {sq.table} {tableNumber}
