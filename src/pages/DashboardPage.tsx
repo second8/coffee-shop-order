@@ -649,7 +649,9 @@ export default function DashboardPage() {
             {pending.length} {sq.pending}
           </span>
           <span className={`role-pill role-${profile.role}`}>
-            {profile.role === 'admin' ? sq.roleAdmin : sq.roleWorker}
+            {profile.display_name ||
+              profile.email.split('@')[0] ||
+              (profile.role === 'admin' ? sq.roleAdmin : sq.roleWorker)}
           </span>
         </div>
         <div className="dashboard-stats">
@@ -681,47 +683,46 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <nav className="dashboard-tabs">
-        <button
-          type="button"
-          className={`dash-tab ${tab === 'live' ? 'is-active' : ''}`}
-          onClick={() => setTab('live')}
-        >
-          {sq.liveBoard}
-        </button>
-        {isAdmin && (
-          <>
-            <button
-              type="button"
-              className={`dash-tab ${tab === 'sales' ? 'is-active' : ''}`}
-              onClick={() => setTab('sales')}
-            >
-              {sq.salesHistory}
-            </button>
-            <button
-              type="button"
-              className={`dash-tab ${tab === 'speed' ? 'is-active' : ''}`}
-              onClick={() => setTab('speed')}
-            >
-              {sq.performance}
-            </button>
-            <button
-              type="button"
-              className={`dash-tab ${tab === 'team' ? 'is-active' : ''}`}
-              onClick={() => setTab('team')}
-            >
-              {sq.team}
-            </button>
-            <button
-              type="button"
-              className={`dash-tab ${tab === 'archive' ? 'is-active' : ''}`}
-              onClick={() => setTab('archive')}
-            >
-              {sq.archiveTab}
-            </button>
-          </>
-        )}
-      </nav>
+      {/* Workers only have the live board — hide tab bar. Admin sees all sections. */}
+      {isAdmin && (
+        <nav className="dashboard-tabs">
+          <button
+            type="button"
+            className={`dash-tab ${tab === 'live' ? 'is-active' : ''}`}
+            onClick={() => setTab('live')}
+          >
+            {sq.liveBoard}
+          </button>
+          <button
+            type="button"
+            className={`dash-tab ${tab === 'sales' ? 'is-active' : ''}`}
+            onClick={() => setTab('sales')}
+          >
+            {sq.salesHistory}
+          </button>
+          <button
+            type="button"
+            className={`dash-tab ${tab === 'speed' ? 'is-active' : ''}`}
+            onClick={() => setTab('speed')}
+          >
+            {sq.performance}
+          </button>
+          <button
+            type="button"
+            className={`dash-tab ${tab === 'team' ? 'is-active' : ''}`}
+            onClick={() => setTab('team')}
+          >
+            {sq.team}
+          </button>
+          <button
+            type="button"
+            className={`dash-tab ${tab === 'archive' ? 'is-active' : ''}`}
+            onClick={() => setTab('archive')}
+          >
+            {sq.archiveTab}
+          </button>
+        </nav>
+      )}
 
       {!isSupabaseConfigured && (
         <div className="banner banner-warn">
