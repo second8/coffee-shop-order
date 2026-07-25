@@ -1,16 +1,42 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
+  buildItemSales,
+  fetchOrdersSince,
   fetchTodayOrders,
   isSupabaseConfigured,
   markOrderDone,
+  ordersToCsv,
   subscribeDemoOrders,
   supabase,
 } from '../lib/orders'
 import { formatEuro, formatRelativeTime, formatTime } from '../utils/format'
 import type { Order } from '../types'
 
-const DASHBOARD_PIN = '1234'
-const PIN_STORAGE_KEY = 'cafe-sol-dashboard-auth'
+/** Staff PIN — override with VITE_DASHBOARD_PIN in .env / Vercel if you change it later. */
+const DASHBOARD_PIN =
+  (import.meta.env.VITE_DASHBOARD_PIN as string | undefined)?.trim() || '197951'
+
+/** Bump this if you change the PIN so old sessions are forced to re-enter. */
+const PIN_STORAGE_KEY = 'cafe-sol-dashboard-auth-v2'
+
+type Tab = 'live' | 'sales'
+type SalesRange = 'today' | '7d' | '30d' | '90d'
+
+function rangeStart(range: SalesRange): Date {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  if (range === 'today') return d
+  if (range === '7d') {
+    d.setDate(d.getDate() - 6)
+    return d
+  }
+  if (range === '30d') {
+    d.setDate(d.getDate() - 29)
+    return d
+  }
+  d.setDate(d.getDate() - 89)
+  return d
+}
 
 function playNotificationSound() {
   try {
@@ -34,6 +60,16 @@ function playNotificationSound() {
   } catch {
     // Audio may be blocked until user interaction
   }
+}
+
+function downloadText(filename: string, text: string) {
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 function OrderCard({
@@ -102,6 +138,10 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [showCompleted, setShowCompleted] = useState(true)
   const [soundEnabled, setSoundEnabled] = useState(true)
+  const [tab, setTab] = useState<Tab>('live')
+  const [salesRange, setSalesRange] = useState<SalesRange>('today')
+  const [salesOrders, setSalesOrders] = useState<Order[]>([])
+  const [salesLoading, setSalesLoading] = useState(false)
   const knownIdsRef = useRef<Set<string>>(new Set())
   const readyForSoundRef = useRef(false)
 
@@ -121,6 +161,16 @@ export default function DashboardPage() {
     }
   }
 
+  const handleLogout = () => {
+    try {
+      sessionStorage.removeItem(PIN_STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+    setAuthenticated(false)
+    setPin('')
+  }
+
   const loadOrders = useCallback(async () => {
     const { data, error: fetchError } = await fetchTodayOrders()
     if (fetchError) {
@@ -131,10 +181,23 @@ export default function DashboardPage() {
       knownIdsRef.current = new Set(data.map((o) => o.id))
     }
     setLoading(false)
-    // Allow sounds only after initial load settles
     window.setTimeout(() => {
       readyForSoundRef.current = true
     }, 500)
+  }, [])
+
+  const loadSales = useCallback(async (range: SalesRange) => {
+    setSalesLoading(true)
+    const { data, error: fetchError } = await fetchOrdersSince(
+      rangeStart(range).toISOString()
+    )
+    if (fetchError) {
+      setError(fetchError)
+    } else {
+      setError(null)
+      setSalesOrders(data)
+    }
+    setSalesLoading(false)
   }, [])
 
   useEffect(() => {
@@ -142,7 +205,12 @@ export default function DashboardPage() {
     void loadOrders()
   }, [authenticated, loadOrders])
 
-  // Demo mode: poll localStorage when another tab places an order
+  useEffect(() => {
+    if (!authenticated || tab !== 'sales') return
+    void loadSales(salesRange)
+  }, [authenticated, tab, salesRange, loadSales])
+
+  // Demo mode: react when another tab places an order
   useEffect(() => {
     if (!authenticated || isSupabaseConfigured) return
 
@@ -162,11 +230,12 @@ export default function DashboardPage() {
         }
         knownIdsRef.current = new Set(data.map((o) => o.id))
         setOrders(data)
+        if (tab === 'sales') void loadSales(salesRange)
       })()
     })
 
     return unsub
-  }, [authenticated, soundEnabled])
+  }, [authenticated, soundEnabled, tab, salesRange, loadSales])
 
   // Live mode: Supabase Realtime
   useEffect(() => {
@@ -184,12 +253,12 @@ export default function DashboardPage() {
             const created = new Date(order.created_at)
             const startOfDay = new Date()
             startOfDay.setHours(0, 0, 0, 0)
-            if (created < startOfDay) return
-
-            setOrders((prev) => {
-              if (prev.some((o) => o.id === order.id)) return prev
-              return [order, ...prev]
-            })
+            if (created >= startOfDay) {
+              setOrders((prev) => {
+                if (prev.some((o) => o.id === order.id)) return prev
+                return [order, ...prev]
+              })
+            }
 
             if (
               readyForSoundRef.current &&
@@ -225,7 +294,6 @@ export default function DashboardPage() {
   }, [authenticated, soundEnabled])
 
   const handleDone = async (id: string) => {
-    // Optimistic update
     setOrders((prev) =>
       prev.map((o) => (o.id === id ? { ...o, status: 'done' as const } : o))
     )
@@ -250,6 +318,13 @@ export default function DashboardPage() {
     [orders]
   )
 
+  const salesRevenue = useMemo(
+    () => salesOrders.reduce((sum, o) => sum + Number(o.total), 0),
+    [salesOrders]
+  )
+
+  const itemSales = useMemo(() => buildItemSales(salesOrders), [salesOrders])
+
   if (!authenticated) {
     return (
       <div className="dashboard-pin-page">
@@ -264,11 +339,11 @@ export default function DashboardPage() {
             className={`pin-input ${pinError ? 'is-error' : ''}`}
             value={pin}
             onChange={(e) => {
-              setPin(e.target.value)
+              setPin(e.target.value.replace(/\D/g, ''))
               setPinError(false)
             }}
-            placeholder="••••"
-            maxLength={8}
+            placeholder="••••••"
+            maxLength={12}
             autoFocus
           />
           {pinError && <p className="form-error">Incorrect PIN</p>}
@@ -285,9 +360,7 @@ export default function DashboardPage() {
       <header className="dashboard-header">
         <div className="dashboard-header-left">
           <h1>Orders</h1>
-          <span className="pending-pill">
-            {pending.length} pending
-          </span>
+          <span className="pending-pill">{pending.length} pending</span>
         </div>
         <div className="dashboard-stats">
           <div className="stat">
@@ -307,59 +380,184 @@ export default function DashboardPage() {
           >
             {soundEnabled ? '🔔' : '🔕'}
           </button>
+          <button
+            type="button"
+            className="logout-btn"
+            onClick={handleLogout}
+            title="Lock dashboard"
+          >
+            Lock
+          </button>
         </div>
       </header>
+
+      <nav className="dashboard-tabs" aria-label="Dashboard sections">
+        <button
+          type="button"
+          className={`dash-tab ${tab === 'live' ? 'is-active' : ''}`}
+          onClick={() => setTab('live')}
+        >
+          Live board
+        </button>
+        <button
+          type="button"
+          className={`dash-tab ${tab === 'sales' ? 'is-active' : ''}`}
+          onClick={() => setTab('sales')}
+        >
+          Sales & history
+        </button>
+      </nav>
 
       {!isSupabaseConfigured && (
         <div className="banner banner-warn">
           <strong>Demo mode</strong> — orders are stored in this browser only.
-          Open the customer menu in another tab to place an order. To go live,
-          add Supabase keys to <code>.env</code> and run{' '}
-          <code>supabase/schema.sql</code>.
+          Live data needs Supabase.
         </div>
       )}
 
       {error && <div className="banner banner-error">{error}</div>}
 
       <main className="dashboard-main">
-        <section className="dashboard-section">
-          <h2 className="section-label">Active</h2>
-          {loading ? (
-            <p className="empty-state">Loading orders…</p>
-          ) : pending.length === 0 ? (
-            <p className="empty-state">No pending orders. Waiting for the next one…</p>
-          ) : (
-            <div className="order-grid">
-              {pending.map((order) => (
-                <OrderCard key={order.id} order={order} onDone={handleDone} />
-              ))}
-            </div>
-          )}
-        </section>
+        {tab === 'live' && (
+          <>
+            <section className="dashboard-section">
+              <h2 className="section-label">Active</h2>
+              {loading ? (
+                <p className="empty-state">Loading orders…</p>
+              ) : pending.length === 0 ? (
+                <p className="empty-state">
+                  No pending orders. Waiting for the next one…
+                </p>
+              ) : (
+                <div className="order-grid">
+                  {pending.map((order) => (
+                    <OrderCard key={order.id} order={order} onDone={handleDone} />
+                  ))}
+                </div>
+              )}
+            </section>
 
-        <section className="dashboard-section">
-          <button
-            type="button"
-            className="section-toggle"
-            onClick={() => setShowCompleted((v) => !v)}
-          >
-            <h2 className="section-label">
-              Completed today
-              <span className="section-count">{completed.length}</span>
-            </h2>
-            <span className="chevron">{showCompleted ? '▾' : '▸'}</span>
-          </button>
-          {showCompleted &&
-            (completed.length === 0 ? (
-              <p className="empty-state">No completed orders yet.</p>
-            ) : (
-              <div className="order-grid order-grid-done">
-                {completed.map((order) => (
-                  <OrderCard key={order.id} order={order} dimmed />
+            <section className="dashboard-section">
+              <button
+                type="button"
+                className="section-toggle"
+                onClick={() => setShowCompleted((v) => !v)}
+              >
+                <h2 className="section-label">
+                  Completed today
+                  <span className="section-count">{completed.length}</span>
+                </h2>
+                <span className="chevron">{showCompleted ? '▾' : '▸'}</span>
+              </button>
+              {showCompleted &&
+                (completed.length === 0 ? (
+                  <p className="empty-state">No completed orders yet.</p>
+                ) : (
+                  <div className="order-grid order-grid-done">
+                    {completed.map((order) => (
+                      <OrderCard key={order.id} order={order} dimmed />
+                    ))}
+                  </div>
+                ))}
+            </section>
+          </>
+        )}
+
+        {tab === 'sales' && (
+          <section className="dashboard-section sales-section">
+            <div className="sales-toolbar">
+              <div className="range-pills" role="group" aria-label="Date range">
+                {(
+                  [
+                    ['today', 'Today'],
+                    ['7d', '7 days'],
+                    ['30d', '30 days'],
+                    ['90d', '90 days'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`range-pill ${salesRange === key ? 'is-active' : ''}`}
+                    onClick={() => setSalesRange(key)}
+                  >
+                    {label}
+                  </button>
                 ))}
               </div>
-            ))}
-        </section>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={salesOrders.length === 0}
+                onClick={() =>
+                  downloadText(
+                    `cafe-sol-orders-${salesRange}.csv`,
+                    ordersToCsv(salesOrders)
+                  )
+                }
+              >
+                Download CSV
+              </button>
+            </div>
+
+            <div className="sales-summary">
+              <div className="sales-stat-card">
+                <span className="stat-label">Orders</span>
+                <span className="sales-stat-value">
+                  {salesLoading ? '…' : salesOrders.length}
+                </span>
+              </div>
+              <div className="sales-stat-card">
+                <span className="stat-label">Revenue</span>
+                <span className="sales-stat-value">
+                  {salesLoading ? '…' : formatEuro(salesRevenue)}
+                </span>
+              </div>
+              <div className="sales-stat-card">
+                <span className="stat-label">Avg order</span>
+                <span className="sales-stat-value">
+                  {salesLoading || salesOrders.length === 0
+                    ? '—'
+                    : formatEuro(salesRevenue / salesOrders.length)}
+                </span>
+              </div>
+            </div>
+
+            <h2 className="section-label">Items sold</h2>
+            {salesLoading ? (
+              <p className="empty-state">Loading sales…</p>
+            ) : itemSales.length === 0 ? (
+              <p className="empty-state">No orders in this period.</p>
+            ) : (
+              <div className="sales-table-wrap">
+                <table className="sales-table">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Qty</th>
+                      <th>Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {itemSales.map((row) => (
+                      <tr key={row.name}>
+                        <td>{row.name}</td>
+                        <td>{row.quantity}</td>
+                        <td>{formatEuro(row.revenue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <p className="sales-footnote">
+              All orders stay in your Supabase database permanently. This screen
+              only displays a range for reporting. Use Download CSV to archive
+              sales offline (Excel, Google Sheets, bookkeeping).
+            </p>
+          </section>
+        )}
       </main>
     </div>
   )
