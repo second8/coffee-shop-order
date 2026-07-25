@@ -84,7 +84,6 @@ export const sq = {
   completionList: 'Porositë e përfunduara',
   duration: 'Kohëzgjatja',
   noSpeedData: 'Nuk ka të dhëna shpejtësie ende.',
-  onlyAdmin: 'Vetëm admini sheh shitjet, arkivën dhe statistikat.',
 
   workerStats: 'Punëtorët',
   finished: 'Përfunduar',
