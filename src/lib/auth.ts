@@ -16,18 +16,28 @@ export function isDemoAuth(): boolean {
   return !isSupabaseConfigured
 }
 
+function roleFromUser(user: User): StaffRole | null {
+  const raw =
+    (user.app_metadata?.role as string | undefined) ||
+    (user.user_metadata?.role as string | undefined)
+  if (raw === 'admin' || raw === 'worker') return raw
+  return null
+}
+
 export async function signInWithEmail(
   email: string,
   password: string
 ): Promise<{ error: string | null }> {
   if (!supabase) {
-    // Demo: admin@demo.local / admin → admin, worker@demo.local / worker → worker
     const e = email.trim().toLowerCase()
     let role: StaffRole | null = null
     if (e === 'admin@demo.local' && password === 'admin') role = 'admin'
     if (e === 'worker@demo.local' && password === 'worker') role = 'worker'
     if (!role) {
-      return { error: 'Email ose fjalëkalim i gabuar (demo: admin@demo.local / admin)' }
+      return {
+        error:
+          'Email ose fjalëkalim i gabuar (demo: admin@demo.local / admin)',
+      }
     }
     const profile: StaffProfile = {
       id: role === 'admin' ? 'demo-admin' : 'demo-worker',
@@ -65,39 +75,72 @@ export function getDemoProfile(): StaffProfile | null {
   }
 }
 
+/**
+ * Resolve staff role.
+ * Prefer JWT app_metadata (set by service role) — works even if RLS blocks staff_profiles.
+ */
 export async function fetchStaffProfile(
-  userId: string,
-  email: string
+  user: User
 ): Promise<StaffProfile | null> {
   if (!supabase) return getDemoProfile()
+
+  const email = user.email ?? ''
+  const metaRole = roleFromUser(user)
+
+  if (metaRole) {
+    return {
+      id: user.id,
+      email,
+      role: metaRole,
+      display_name:
+        (user.user_metadata?.display_name as string | undefined) ??
+        email.split('@')[0] ??
+        null,
+    }
+  }
 
   const { data, error } = await supabase
     .from('staff_profiles')
     .select('id, role, display_name')
-    .eq('id', userId)
+    .eq('id', user.id)
     .maybeSingle()
 
-  if (error || !data) {
-    // Fallback: treat any logged-in user without profile as worker
+  if (error) {
+    console.error('staff_profiles read error:', error.message)
+  }
+
+  if (data && (data.role === 'admin' || data.role === 'worker')) {
     return {
-      id: userId,
+      id: data.id as string,
       email,
-      role: 'worker',
-      display_name: email.split('@')[0] ?? null,
+      role: data.role as StaffRole,
+      display_name: (data.display_name as string | null) ?? null,
     }
   }
 
+  // Default worker if no role set anywhere
   return {
-    id: data.id as string,
+    id: user.id,
     email,
-    role: data.role as StaffRole,
-    display_name: (data.display_name as string | null) ?? null,
+    role: 'worker',
+    display_name: email.split('@')[0] ?? null,
   }
 }
 
 export async function getSession(): Promise<Session | null> {
   if (!supabase) return null
   const { data } = await supabase.auth.getSession()
+  return data.session
+}
+
+/** Refresh session so app_metadata role changes apply. */
+export async function refreshSession(): Promise<Session | null> {
+  if (!supabase) return null
+  const { data, error } = await supabase.auth.refreshSession()
+  if (error) {
+    console.error('refreshSession', error.message)
+    return getSession()
+  }
   return data.session
 }
 

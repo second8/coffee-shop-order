@@ -6,6 +6,7 @@ import {
   getSession,
   isDemoAuth,
   onAuthChange,
+  refreshSession,
   signInWithEmail,
   signOut,
 } from '../lib/auth'
@@ -160,10 +161,7 @@ export default function DashboardPage() {
       setProfile(null)
       return
     }
-    const p = await fetchStaffProfile(
-      session.user.id,
-      session.user.email ?? ''
-    )
+    const p = await fetchStaffProfile(session.user)
     setProfile(p)
   }, [])
 
@@ -179,7 +177,9 @@ export default function DashboardPage() {
         return
       }
 
-      const session = await getSession()
+      // Refresh so JWT picks up admin role from app_metadata
+      let session = await refreshSession()
+      if (!session) session = await getSession()
       if (!cancelled) {
         await applySession(session)
         setAuthLoading(false)
@@ -201,14 +201,19 @@ export default function DashboardPage() {
     setLoggingIn(true)
     setLoginError(null)
     const { error: err } = await signInWithEmail(email, password)
-    setLoggingIn(false)
     if (err) {
+      setLoggingIn(false)
       setLoginError(err)
       return
     }
     if (isDemoAuth()) {
       setProfile(getDemoProfile())
+      setLoggingIn(false)
+      return
     }
+    const session = await refreshSession()
+    await applySession(session)
+    setLoggingIn(false)
   }
 
   const handleLogout = async () => {
