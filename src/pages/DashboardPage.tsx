@@ -536,29 +536,30 @@ export default function DashboardPage() {
     [activeOrders]
   )
 
-  const completed = useMemo(
-    () =>
-      activeOrders
-        .filter((o) => o.status === 'done')
-        .sort(
-          (a, b) =>
-            new Date(b.completed_at || b.created_at).getTime() -
-            new Date(a.completed_at || a.created_at).getTime()
-        ),
-    [activeOrders]
-  )
+  // Workers only see completions/cancels they did themselves; admin sees all
+  const completed = useMemo(() => {
+    let list = activeOrders.filter((o) => o.status === 'done')
+    if (!isAdmin && profile) {
+      list = list.filter((o) => o.completed_by === profile.id)
+    }
+    return list.sort(
+      (a, b) =>
+        new Date(b.completed_at || b.created_at).getTime() -
+        new Date(a.completed_at || a.created_at).getTime()
+    )
+  }, [activeOrders, isAdmin, profile])
 
-  const cancelled = useMemo(
-    () =>
-      activeOrders
-        .filter((o) => o.status === 'cancelled')
-        .sort(
-          (a, b) =>
-            new Date(b.completed_at || b.created_at).getTime() -
-            new Date(a.completed_at || a.created_at).getTime()
-        ),
-    [activeOrders]
-  )
+  const cancelled = useMemo(() => {
+    let list = activeOrders.filter((o) => o.status === 'cancelled')
+    if (!isAdmin && profile) {
+      list = list.filter((o) => o.completed_by === profile.id)
+    }
+    return list.sort(
+      (a, b) =>
+        new Date(b.completed_at || b.created_at).getTime() -
+        new Date(a.completed_at || a.created_at).getTime()
+    )
+  }, [activeOrders, isAdmin, profile])
 
   const dailyRevenue = useMemo(
     () =>
