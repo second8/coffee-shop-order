@@ -119,22 +119,55 @@ export async function createOrder(
     return { data: order, error: null }
   }
 
-  const { data, error } = await supabase
-    .from('orders')
-    .insert({
+  // Prefer server API when deployed (service role, bypasses RLS quirks).
+  try {
+    const apiRes = await fetch('/api/create-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        table_number: tableNumber,
+        items: sanitized.items,
+      }),
+    })
+    if (apiRes.ok) {
+      const body = (await apiRes.json()) as { data?: Order; error?: string }
+      if (body.data) return { data: body.data, error: null }
+    }
+  } catch {
+    // Local Vite has no /api — use direct insert below
+  }
+
+  // IMPORTANT: do NOT .select() after insert.
+  // Anon can INSERT but cannot SELECT (staff-only read) — .select() triggers RLS error.
+  const { error } = await supabase.from('orders').insert({
+    table_number: tableNumber,
+    items: sanitized.items,
+    total: sanitized.total,
+    status: 'pending',
+  })
+
+  if (error) {
+    return {
+      data: null,
+      error:
+        error.message +
+        ' — Nëse vazhdon, ekzekuto supabase/FIX_ORDERS_RLS.sql në Supabase.',
+    }
+  }
+
+  return {
+    data: {
+      id: crypto.randomUUID(),
       table_number: tableNumber,
       items: sanitized.items,
       total: sanitized.total,
       status: 'pending',
-    })
-    .select()
-    .single()
-
-  if (error) {
-    return { data: null, error: error.message }
+      created_at: new Date().toISOString(),
+      completed_at: null,
+      completed_by: null,
+    },
+    error: null,
   }
-
-  return { data: data as Order, error: null }
 }
 
 export async function fetchTodayOrders(): Promise<{

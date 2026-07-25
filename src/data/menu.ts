@@ -6,46 +6,46 @@ export const MENU_TITLE = 'The Summer Menu'
 export const INSTAGRAM = '@pristinahomemademuffins'
 
 /**
- * Prices verified against printed menu photo.
- * Names are Albanian (app is Albanian-only). Brand cocktail names stay international.
+ * Item & category names in English (as on the printed menu).
+ * App chrome (buttons, labels) stays Albanian.
  */
 export const menu: { categories: MenuCategory[] } = {
   categories: [
     {
-      name: 'Kafe',
+      name: 'Coffee',
       items: [
         { name: 'Freddo Espresso', price: 2.5 },
         { name: 'Espresso Tonic', price: 2.5 },
-        { name: 'Kafe me akull', price: 2.0 },
+        { name: 'Iced Coffee', price: 2.0 },
         { name: 'Frappe', price: 2.0 },
         { name: 'Affogato', price: 2.5 },
       ],
     },
     {
-      name: 'Ëmbëlsira',
+      name: 'Desserts',
       items: [
-        { name: 'Tortë greke me akullore karamel', price: 3.0 },
-        { name: 'Brownie me akullore vanilje', price: 3.0 },
+        { name: 'Greek cake with caramel ice cream', price: 3.0 },
+        { name: 'Brownie with vanilla ice cream', price: 3.0 },
       ],
     },
     {
-      name: 'Limonata',
+      name: 'Lemonades',
       items: [
-        { name: 'Limonatë klasike', price: 2.0 },
-        { name: 'Limonatë mango', price: 2.0 },
-        { name: 'Limonatë luleshtrydhe', price: 2.0 },
-        { name: 'Limonatë frut pasioni', price: 2.0 },
+        { name: 'Classic Lemonade', price: 2.0 },
+        { name: 'Mango Lemonade', price: 2.0 },
+        { name: 'Strawberry Lemonade', price: 2.0 },
+        { name: 'Passion Fruit Lemonade', price: 2.0 },
       ],
     },
     {
-      name: 'Pije',
+      name: 'Drinks',
       items: [
         { name: 'Aperol Spritz', price: 4.0 },
-        { name: 'Limonatë rosé', price: 3.0 },
-        { name: 'Çaj i ftohtë', price: 2.5 },
-        { name: 'Vodka Sour frut pasioni', price: 5.0 },
+        { name: 'Rosé Lemonade', price: 3.0 },
+        { name: 'Fresh Iced Tea', price: 2.5 },
+        { name: 'Vodka Sour Passion Fruit', price: 5.0 },
         { name: 'Mimosa', price: 4.0 },
-        { name: 'Verë e bardhë / e kuqe', price: 4.0 },
+        { name: 'Wine (red/white)', price: 4.0 },
       ],
     },
   ],
