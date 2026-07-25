@@ -728,7 +728,6 @@ export default function DashboardPage() {
           <strong>Demo</strong> — {sq.demoBanner}
         </div>
       )}
-      {!isAdmin && <div className="banner banner-info">{sq.onlyAdmin}</div>}
       {error && <div className="banner banner-error">{error}</div>}
 
       <main className="dashboard-main">
