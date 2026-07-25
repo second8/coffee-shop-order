@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import {
+  fetchStaffProfile,
+  getDemoProfile,
+  getSession,
+  isDemoAuth,
+  onAuthChange,
+  signInWithEmail,
+  signOut,
+} from '../lib/auth'
 import {
   buildItemSales,
+  buildSpeedStats,
   fetchOrdersSince,
   fetchTodayOrders,
+  formatDuration,
   isSupabaseConfigured,
   markOrderDone,
   ordersToCsv,
@@ -10,16 +22,10 @@ import {
   supabase,
 } from '../lib/orders'
 import { formatEuro, formatRelativeTime, formatTime } from '../utils/format'
-import type { Order } from '../types'
+import { sq } from '../i18n/sq'
+import type { Order, StaffProfile } from '../types'
 
-/** Staff PIN — override with VITE_DASHBOARD_PIN in .env / Vercel if you change it later. */
-const DASHBOARD_PIN =
-  (import.meta.env.VITE_DASHBOARD_PIN as string | undefined)?.trim() || '197951'
-
-/** Bump this if you change the PIN so old sessions are forced to re-enter. */
-const PIN_STORAGE_KEY = 'cafe-sol-dashboard-auth-v2'
-
-type Tab = 'live' | 'sales'
+type Tab = 'live' | 'sales' | 'speed'
 type SalesRange = 'today' | '7d' | '30d' | '90d'
 
 function rangeStart(range: SalesRange): Date {
@@ -42,7 +48,6 @@ function playNotificationSound() {
   try {
     const ctx = new AudioContext()
     const now = ctx.currentTime
-
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.type = 'sine'
@@ -55,10 +60,9 @@ function playNotificationSound() {
     gain.connect(ctx.destination)
     osc.start(now)
     osc.stop(now + 0.3)
-
     window.setTimeout(() => void ctx.close(), 400)
   } catch {
-    // Audio may be blocked until user interaction
+    // ignore
   }
 }
 
@@ -92,12 +96,18 @@ function OrderCard({
   return (
     <article className={`order-card ${dimmed ? 'is-done' : ''}`}>
       <div className="order-card-top">
-        <h2 className="order-card-table">Table {order.table_number}</h2>
+        <h2 className="order-card-table">
+          {sq.table} {order.table_number}
+        </h2>
         <div className="order-card-meta">
           <span className="order-card-time">
-            {dimmed ? formatTime(order.created_at) : formatRelativeTime(order.created_at)}
+            {dimmed
+              ? formatTime(order.created_at)
+              : formatRelativeTime(order.created_at)}
           </span>
-          <span className="order-card-total">{formatEuro(Number(order.total))}</span>
+          <span className="order-card-total">
+            {formatEuro(Number(order.total))}
+          </span>
         </div>
       </div>
 
@@ -116,7 +126,7 @@ function OrderCard({
           className="btn btn-done"
           onClick={() => onDone(order.id)}
         >
-          Mark Done
+          {sq.markDone}
         </button>
       )}
     </article>
@@ -124,15 +134,13 @@ function OrderCard({
 }
 
 export default function DashboardPage() {
-  const [authenticated, setAuthenticated] = useState(() => {
-    try {
-      return sessionStorage.getItem(PIN_STORAGE_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
-  const [pin, setPin] = useState('')
-  const [pinError, setPinError] = useState(false)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [profile, setProfile] = useState<StaffProfile | null>(null)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loginError, setLoginError] = useState<string | null>(null)
+  const [loggingIn, setLoggingIn] = useState(false)
+
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -145,30 +153,69 @@ export default function DashboardPage() {
   const knownIdsRef = useRef<Set<string>>(new Set())
   const readyForSoundRef = useRef(false)
 
-  const handlePinSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    if (pin === DASHBOARD_PIN) {
-      try {
-        sessionStorage.setItem(PIN_STORAGE_KEY, '1')
-      } catch {
-        // ignore
+  const isAdmin = profile?.role === 'admin'
+
+  const applySession = useCallback(async (session: Session | null) => {
+    if (!session?.user) {
+      setProfile(null)
+      return
+    }
+    const p = await fetchStaffProfile(
+      session.user.id,
+      session.user.email ?? ''
+    )
+    setProfile(p)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      if (isDemoAuth()) {
+        if (!cancelled) {
+          setProfile(getDemoProfile())
+          setAuthLoading(false)
+        }
+        return
       }
-      setAuthenticated(true)
-      setPinError(false)
-    } else {
-      setPinError(true)
-      setPin('')
+
+      const session = await getSession()
+      if (!cancelled) {
+        await applySession(session)
+        setAuthLoading(false)
+      }
+    })()
+
+    const unsub = onAuthChange((session) => {
+      void applySession(session)
+    })
+
+    return () => {
+      cancelled = true
+      unsub()
+    }
+  }, [applySession])
+
+  const handleLogin = async (e: FormEvent) => {
+    e.preventDefault()
+    setLoggingIn(true)
+    setLoginError(null)
+    const { error: err } = await signInWithEmail(email, password)
+    setLoggingIn(false)
+    if (err) {
+      setLoginError(err)
+      return
+    }
+    if (isDemoAuth()) {
+      setProfile(getDemoProfile())
     }
   }
 
-  const handleLogout = () => {
-    try {
-      sessionStorage.removeItem(PIN_STORAGE_KEY)
-    } catch {
-      // ignore
-    }
-    setAuthenticated(false)
-    setPin('')
+  const handleLogout = async () => {
+    await signOut()
+    setProfile(null)
+    setOrders([])
+    setTab('live')
   }
 
   const loadOrders = useCallback(async () => {
@@ -201,18 +248,18 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
-    if (!authenticated) return
+    if (!profile) return
     void loadOrders()
-  }, [authenticated, loadOrders])
+  }, [profile, loadOrders])
 
   useEffect(() => {
-    if (!authenticated || tab !== 'sales') return
+    if (!profile || !isAdmin) return
+    if (tab !== 'sales' && tab !== 'speed') return
     void loadSales(salesRange)
-  }, [authenticated, tab, salesRange, loadSales])
+  }, [profile, isAdmin, tab, salesRange, loadSales])
 
-  // Demo mode: react when another tab places an order
   useEffect(() => {
-    if (!authenticated || isSupabaseConfigured) return
+    if (!profile || isSupabaseConfigured) return
 
     const unsub = subscribeDemoOrders(() => {
       void (async () => {
@@ -221,25 +268,22 @@ export default function DashboardPage() {
         const newPending = data.filter(
           (o) => o.status === 'pending' && !prevIds.has(o.id)
         )
-        if (
-          readyForSoundRef.current &&
-          soundEnabled &&
-          newPending.length > 0
-        ) {
+        if (readyForSoundRef.current && soundEnabled && newPending.length > 0) {
           playNotificationSound()
         }
         knownIdsRef.current = new Set(data.map((o) => o.id))
         setOrders(data)
-        if (tab === 'sales') void loadSales(salesRange)
+        if (isAdmin && (tab === 'sales' || tab === 'speed')) {
+          void loadSales(salesRange)
+        }
       })()
     })
 
     return unsub
-  }, [authenticated, soundEnabled, tab, salesRange, loadSales])
+  }, [profile, soundEnabled, isAdmin, tab, salesRange, loadSales])
 
-  // Live mode: Supabase Realtime
   useEffect(() => {
-    if (!authenticated || !supabase) return
+    if (!profile || !supabase) return
 
     const client = supabase
     const channel = client
@@ -259,7 +303,6 @@ export default function DashboardPage() {
                 return [order, ...prev]
               })
             }
-
             if (
               readyForSoundRef.current &&
               soundEnabled &&
@@ -291,13 +334,23 @@ export default function DashboardPage() {
     return () => {
       void client.removeChannel(channel)
     }
-  }, [authenticated, soundEnabled])
+  }, [profile, soundEnabled])
 
   const handleDone = async (id: string) => {
+    const now = new Date().toISOString()
     setOrders((prev) =>
-      prev.map((o) => (o.id === id ? { ...o, status: 'done' as const } : o))
+      prev.map((o) =>
+        o.id === id
+          ? {
+              ...o,
+              status: 'done' as const,
+              completed_at: now,
+              completed_by: profile?.id ?? null,
+            }
+          : o
+      )
     )
-    const { error: updateError } = await markOrderDone(id)
+    const { error: updateError } = await markOrderDone(id, profile?.id)
     if (updateError) {
       setError(updateError)
       void loadOrders()
@@ -312,44 +365,70 @@ export default function DashboardPage() {
     () => orders.filter((o) => o.status === 'done'),
     [orders]
   )
-
   const dailyRevenue = useMemo(
     () => orders.reduce((sum, o) => sum + Number(o.total), 0),
     [orders]
   )
-
   const salesRevenue = useMemo(
     () => salesOrders.reduce((sum, o) => sum + Number(o.total), 0),
     [salesOrders]
   )
-
   const itemSales = useMemo(() => buildItemSales(salesOrders), [salesOrders])
+  const speedStats = useMemo(() => buildSpeedStats(salesOrders), [salesOrders])
 
-  if (!authenticated) {
+  if (authLoading) {
     return (
       <div className="dashboard-pin-page">
-        <form className="pin-card" onSubmit={handlePinSubmit}>
-          <h1>Staff access</h1>
-          <p>Enter PIN to open the order board</p>
+        <p style={{ color: '#a89888' }}>{sq.loading}</p>
+      </div>
+    )
+  }
+
+  if (!profile) {
+    return (
+      <div className="dashboard-pin-page">
+        <form className="pin-card login-card" onSubmit={handleLogin}>
+          <h1>{sq.staffAccess}</h1>
+          <p>{sq.staffHint}</p>
+          <label className="field-label" htmlFor="email">
+            {sq.email}
+          </label>
           <input
-            type="password"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            autoComplete="one-time-code"
-            className={`pin-input ${pinError ? 'is-error' : ''}`}
-            value={pin}
-            onChange={(e) => {
-              setPin(e.target.value.replace(/\D/g, ''))
-              setPinError(false)
-            }}
-            placeholder="••••••"
-            maxLength={12}
+            id="email"
+            type="email"
+            autoComplete="username"
+            className="text-input"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
             autoFocus
           />
-          {pinError && <p className="form-error">Incorrect PIN</p>}
-          <button type="submit" className="btn btn-primary btn-block">
-            Unlock
+          <label className="field-label" htmlFor="password">
+            {sq.password}
+          </label>
+          <input
+            id="password"
+            type="password"
+            autoComplete="current-password"
+            className="text-input"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          {loginError && <p className="form-error">{loginError}</p>}
+          <button
+            type="submit"
+            className="btn btn-primary btn-block"
+            disabled={loggingIn}
+          >
+            {loggingIn ? sq.signingIn : sq.signIn}
           </button>
+          <p className="login-help">{sq.needAccount}</p>
+          {isDemoAuth() && (
+            <p className="login-help">
+              Demo: admin@demo.local / admin · worker@demo.local / worker
+            </p>
+          )}
         </form>
       </div>
     )
@@ -359,60 +438,78 @@ export default function DashboardPage() {
     <div className="dashboard-page">
       <header className="dashboard-header">
         <div className="dashboard-header-left">
-          <h1>Orders</h1>
-          <span className="pending-pill">{pending.length} pending</span>
+          <h1>{sq.orders}</h1>
+          <span className="pending-pill">
+            {pending.length} {sq.pending}
+          </span>
+          <span className={`role-pill role-${profile.role}`}>
+            {profile.role === 'admin' ? sq.roleAdmin : sq.roleWorker}
+          </span>
         </div>
         <div className="dashboard-stats">
-          <div className="stat">
-            <span className="stat-label">Today</span>
-            <span className="stat-value">{orders.length}</span>
-          </div>
-          <div className="stat">
-            <span className="stat-label">Revenue</span>
-            <span className="stat-value">{formatEuro(dailyRevenue)}</span>
-          </div>
+          {isAdmin && (
+            <>
+              <div className="stat">
+                <span className="stat-label">{sq.today}</span>
+                <span className="stat-value">{orders.length}</span>
+              </div>
+              <div className="stat">
+                <span className="stat-label">{sq.revenue}</span>
+                <span className="stat-value">{formatEuro(dailyRevenue)}</span>
+              </div>
+            </>
+          )}
           <button
             type="button"
             className={`sound-toggle ${soundEnabled ? 'is-on' : ''}`}
             onClick={() => setSoundEnabled((v) => !v)}
-            title={soundEnabled ? 'Mute notifications' : 'Enable sound'}
-            aria-label={soundEnabled ? 'Mute notifications' : 'Enable sound'}
+            title={soundEnabled ? sq.soundOn : sq.soundOff}
+            aria-label={soundEnabled ? sq.soundOn : sq.soundOff}
           >
             {soundEnabled ? '🔔' : '🔕'}
           </button>
-          <button
-            type="button"
-            className="logout-btn"
-            onClick={handleLogout}
-            title="Lock dashboard"
-          >
-            Lock
+          <button type="button" className="logout-btn" onClick={handleLogout}>
+            {sq.signOut}
           </button>
         </div>
       </header>
 
-      <nav className="dashboard-tabs" aria-label="Dashboard sections">
+      <nav className="dashboard-tabs" aria-label="Seksionet">
         <button
           type="button"
           className={`dash-tab ${tab === 'live' ? 'is-active' : ''}`}
           onClick={() => setTab('live')}
         >
-          Live board
+          {sq.liveBoard}
         </button>
-        <button
-          type="button"
-          className={`dash-tab ${tab === 'sales' ? 'is-active' : ''}`}
-          onClick={() => setTab('sales')}
-        >
-          Sales & history
-        </button>
+        {isAdmin && (
+          <>
+            <button
+              type="button"
+              className={`dash-tab ${tab === 'sales' ? 'is-active' : ''}`}
+              onClick={() => setTab('sales')}
+            >
+              {sq.salesHistory}
+            </button>
+            <button
+              type="button"
+              className={`dash-tab ${tab === 'speed' ? 'is-active' : ''}`}
+              onClick={() => setTab('speed')}
+            >
+              {sq.performance}
+            </button>
+          </>
+        )}
       </nav>
 
       {!isSupabaseConfigured && (
         <div className="banner banner-warn">
-          <strong>Demo mode</strong> — orders are stored in this browser only.
-          Live data needs Supabase.
+          <strong>Demo</strong> — {sq.demoBanner}
         </div>
+      )}
+
+      {!isAdmin && (
+        <div className="banner banner-info">{sq.onlyAdmin}</div>
       )}
 
       {error && <div className="banner banner-error">{error}</div>}
@@ -421,17 +518,19 @@ export default function DashboardPage() {
         {tab === 'live' && (
           <>
             <section className="dashboard-section">
-              <h2 className="section-label">Active</h2>
+              <h2 className="section-label">{sq.active}</h2>
               {loading ? (
-                <p className="empty-state">Loading orders…</p>
+                <p className="empty-state">{sq.loading}</p>
               ) : pending.length === 0 ? (
-                <p className="empty-state">
-                  No pending orders. Waiting for the next one…
-                </p>
+                <p className="empty-state">{sq.noPending}</p>
               ) : (
                 <div className="order-grid">
                   {pending.map((order) => (
-                    <OrderCard key={order.id} order={order} onDone={handleDone} />
+                    <OrderCard
+                      key={order.id}
+                      order={order}
+                      onDone={handleDone}
+                    />
                   ))}
                 </div>
               )}
@@ -444,14 +543,14 @@ export default function DashboardPage() {
                 onClick={() => setShowCompleted((v) => !v)}
               >
                 <h2 className="section-label">
-                  Completed today
+                  {sq.completedToday}
                   <span className="section-count">{completed.length}</span>
                 </h2>
                 <span className="chevron">{showCompleted ? '▾' : '▸'}</span>
               </button>
               {showCompleted &&
                 (completed.length === 0 ? (
-                  <p className="empty-state">No completed orders yet.</p>
+                  <p className="empty-state">{sq.noCompleted}</p>
                 ) : (
                   <div className="order-grid order-grid-done">
                     {completed.map((order) => (
@@ -463,16 +562,16 @@ export default function DashboardPage() {
           </>
         )}
 
-        {tab === 'sales' && (
+        {tab === 'sales' && isAdmin && (
           <section className="dashboard-section sales-section">
             <div className="sales-toolbar">
-              <div className="range-pills" role="group" aria-label="Date range">
+              <div className="range-pills" role="group">
                 {(
                   [
-                    ['today', 'Today'],
-                    ['7d', '7 days'],
-                    ['30d', '30 days'],
-                    ['90d', '90 days'],
+                    ['today', sq.rangeToday],
+                    ['7d', sq.range7],
+                    ['30d', sq.range30],
+                    ['90d', sq.range90],
                   ] as const
                 ).map(([key, label]) => (
                   <button
@@ -491,30 +590,30 @@ export default function DashboardPage() {
                 disabled={salesOrders.length === 0}
                 onClick={() =>
                   downloadText(
-                    `cafe-sol-orders-${salesRange}.csv`,
+                    `porosi-${salesRange}.csv`,
                     ordersToCsv(salesOrders)
                   )
                 }
               >
-                Download CSV
+                {sq.downloadCsv}
               </button>
             </div>
 
             <div className="sales-summary">
               <div className="sales-stat-card">
-                <span className="stat-label">Orders</span>
+                <span className="stat-label">{sq.orderCount}</span>
                 <span className="sales-stat-value">
                   {salesLoading ? '…' : salesOrders.length}
                 </span>
               </div>
               <div className="sales-stat-card">
-                <span className="stat-label">Revenue</span>
+                <span className="stat-label">{sq.revenue}</span>
                 <span className="sales-stat-value">
                   {salesLoading ? '…' : formatEuro(salesRevenue)}
                 </span>
               </div>
               <div className="sales-stat-card">
-                <span className="stat-label">Avg order</span>
+                <span className="stat-label">{sq.avgOrder}</span>
                 <span className="sales-stat-value">
                   {salesLoading || salesOrders.length === 0
                     ? '—'
@@ -523,19 +622,19 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <h2 className="section-label">Items sold</h2>
+            <h2 className="section-label">{sq.itemsSold}</h2>
             {salesLoading ? (
-              <p className="empty-state">Loading sales…</p>
+              <p className="empty-state">{sq.loading}</p>
             ) : itemSales.length === 0 ? (
-              <p className="empty-state">No orders in this period.</p>
+              <p className="empty-state">{sq.noSales}</p>
             ) : (
               <div className="sales-table-wrap">
                 <table className="sales-table">
                   <thead>
                     <tr>
-                      <th>Item</th>
-                      <th>Qty</th>
-                      <th>Revenue</th>
+                      <th>{sq.itemCol}</th>
+                      <th>{sq.qty}</th>
+                      <th>{sq.rev}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -550,12 +649,100 @@ export default function DashboardPage() {
                 </table>
               </div>
             )}
+            <p className="sales-footnote">{sq.salesFootnote}</p>
+          </section>
+        )}
 
-            <p className="sales-footnote">
-              All orders stay in your Supabase database permanently. This screen
-              only displays a range for reporting. Use Download CSV to archive
-              sales offline (Excel, Google Sheets, bookkeeping).
-            </p>
+        {tab === 'speed' && isAdmin && (
+          <section className="dashboard-section sales-section">
+            <div className="sales-toolbar">
+              <div className="range-pills" role="group">
+                {(
+                  [
+                    ['today', sq.rangeToday],
+                    ['7d', sq.range7],
+                    ['30d', sq.range30],
+                    ['90d', sq.range90],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`range-pill ${salesRange === key ? 'is-active' : ''}`}
+                    onClick={() => setSalesRange(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="sales-summary">
+              <div className="sales-stat-card">
+                <span className="stat-label">{sq.avgSpeed}</span>
+                <span className="sales-stat-value">
+                  {speedStats.avgSeconds === null
+                    ? '—'
+                    : formatDuration(Math.round(speedStats.avgSeconds))}
+                </span>
+              </div>
+              <div className="sales-stat-card">
+                <span className="stat-label">{sq.medianSpeed}</span>
+                <span className="sales-stat-value">
+                  {speedStats.medianSeconds === null
+                    ? '—'
+                    : formatDuration(Math.round(speedStats.medianSeconds))}
+                </span>
+              </div>
+              <div className="sales-stat-card">
+                <span className="stat-label">{sq.under5}</span>
+                <span className="sales-stat-value">
+                  {speedStats.count === 0
+                    ? '—'
+                    : `${Math.round((speedStats.under5min / speedStats.count) * 100)}%`}
+                </span>
+              </div>
+              <div className="sales-stat-card">
+                <span className="stat-label">{sq.under10}</span>
+                <span className="sales-stat-value">
+                  {speedStats.count === 0
+                    ? '—'
+                    : `${Math.round((speedStats.under10min / speedStats.count) * 100)}%`}
+                </span>
+              </div>
+            </div>
+
+            <h2 className="section-label">{sq.completionList}</h2>
+            {salesLoading ? (
+              <p className="empty-state">{sq.loading}</p>
+            ) : speedStats.samples.length === 0 ? (
+              <p className="empty-state">{sq.noSpeedData}</p>
+            ) : (
+              <div className="sales-table-wrap">
+                <table className="sales-table">
+                  <thead>
+                    <tr>
+                      <th>{sq.table}</th>
+                      <th>{sq.duration}</th>
+                      <th>{sq.total}</th>
+                      <th>Ora</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {speedStats.samples.slice(0, 50).map(({ order, seconds }) => (
+                      <tr key={order.id}>
+                        <td>
+                          {sq.table} {order.table_number}
+                        </td>
+                        <td>{formatDuration(seconds)}</td>
+                        <td>{formatEuro(Number(order.total))}</td>
+                        <td>{formatTime(order.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         )}
       </main>

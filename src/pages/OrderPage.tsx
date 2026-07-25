@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { menu, SHOP_NAME } from '../data/menu'
+import { menu, MENU_TITLE, SHOP_NAME } from '../data/menu'
 import { useCart } from '../hooks/useCart'
 import { createOrder } from '../lib/orders'
 import { formatEuro } from '../utils/format'
+import { sq } from '../i18n/sq'
 import type { CartItem } from '../types'
 
 type Screen = 'menu' | 'review' | 'confirmation'
@@ -58,8 +59,8 @@ export default function OrderPage() {
           <div className="order-error-icon" aria-hidden>
             ⌗
           </div>
-          <h1>Table not found</h1>
-          <p>Please scan the QR code at your table to open the menu.</p>
+          <h1>{sq.tableNotFound}</h1>
+          <p>{sq.tableNotFoundHint}</p>
         </div>
       </div>
     )
@@ -72,10 +73,8 @@ export default function OrderPage() {
           <div className="order-confirm-check" aria-hidden>
             ✓
           </div>
-          <h1>Your order has been sent!</h1>
-          <p className="order-confirm-sub">
-            We&apos;ll bring it to table {tableNumber}.
-          </p>
+          <h1>{sq.orderSent}</h1>
+          <p className="order-confirm-sub">{sq.bringToTable(tableNumber)}</p>
           {lastOrder && (
             <div className="order-confirm-summary">
               {lastOrder.items.map((item) => (
@@ -87,7 +86,7 @@ export default function OrderPage() {
                 </div>
               ))}
               <div className="order-confirm-total">
-                <span>Total</span>
+                <span>{sq.total}</span>
                 <span>{formatEuro(lastOrder.total)}</span>
               </div>
             </div>
@@ -97,7 +96,7 @@ export default function OrderPage() {
             className="btn btn-primary btn-block"
             onClick={startNewOrder}
           >
-            Order something else
+            {sq.orderAgain}
           </button>
         </div>
       </div>
@@ -113,15 +112,17 @@ export default function OrderPage() {
             className="back-link"
             onClick={() => setScreen('menu')}
           >
-            ← Back to menu
+            {sq.backToMenu}
           </button>
-          <h1 className="review-title">Your order</h1>
-          <p className="order-table-label">Table {tableNumber}</p>
+          <h1 className="review-title">{sq.yourOrder}</h1>
+          <p className="order-table-label">
+            {sq.table} {tableNumber}
+          </p>
         </header>
 
         <main className="review-main">
           {cart.items.length === 0 ? (
-            <p className="empty-cart">No items yet. Add something from the menu.</p>
+            <p className="empty-cart">{sq.emptyCart}</p>
           ) : (
             <ul className="review-list">
               {cart.items.map((item) => (
@@ -129,14 +130,14 @@ export default function OrderPage() {
                   <div className="review-item-info">
                     <span className="review-item-name">{item.name}</span>
                     <span className="review-item-price">
-                      {formatEuro(item.price)} each
+                      {formatEuro(item.price)} {sq.each}
                     </span>
                   </div>
                   <div className="qty-controls">
                     <button
                       type="button"
                       className="qty-btn"
-                      aria-label={`Decrease ${item.name}`}
+                      aria-label={`Ul ${item.name}`}
                       onClick={() => cart.removeItem(item.name)}
                     >
                       −
@@ -145,7 +146,7 @@ export default function OrderPage() {
                     <button
                       type="button"
                       className="qty-btn"
-                      aria-label={`Increase ${item.name}`}
+                      aria-label={`Shto ${item.name}`}
                       onClick={() =>
                         cart.addItem({ name: item.name, price: item.price })
                       }
@@ -167,7 +168,7 @@ export default function OrderPage() {
         {cart.items.length > 0 && (
           <footer className="review-footer">
             <div className="review-total-row">
-              <span>Total</span>
+              <span>{sq.total}</span>
               <strong>{formatEuro(cart.total)}</strong>
             </div>
             <button
@@ -176,7 +177,7 @@ export default function OrderPage() {
               disabled={submitting}
               onClick={handleSubmit}
             >
-              {submitting ? 'Sending…' : 'Place Order'}
+              {submitting ? sq.sending : sq.placeOrder}
             </button>
           </footer>
         )}
@@ -189,11 +190,16 @@ export default function OrderPage() {
       <header className="order-header">
         <div className="order-brand">
           <span className="order-brand-mark" aria-hidden>
-            ◎
+            ☀
           </span>
-          <h1 className="order-shop-name">{SHOP_NAME}</h1>
+          <div className="order-brand-text">
+            <p className="order-menu-kicker">{MENU_TITLE}</p>
+            <h1 className="order-shop-name">{SHOP_NAME}</h1>
+          </div>
         </div>
-        <p className="order-table-label">Table {tableNumber}</p>
+        <p className="order-table-label">
+          {sq.table} {tableNumber}
+        </p>
       </header>
 
       <main className="menu-main">
@@ -216,9 +222,7 @@ export default function OrderPage() {
                           {formatEuro(item.price)}
                         </span>
                         {qty > 0 && (
-                          <span className="menu-item-badge" aria-label={`${qty} selected`}>
-                            {qty}
-                          </span>
+                          <span className="menu-item-badge">{qty}</span>
                         )}
                       </span>
                     </button>
@@ -227,7 +231,7 @@ export default function OrderPage() {
                         <button
                           type="button"
                           className="qty-btn qty-btn-sm"
-                          aria-label={`Remove one ${item.name}`}
+                          aria-label={`Hiq ${item.name}`}
                           onClick={(e) => {
                             e.stopPropagation()
                             cart.removeItem(item.name)
@@ -238,7 +242,7 @@ export default function OrderPage() {
                         <button
                           type="button"
                           className="qty-btn qty-btn-sm"
-                          aria-label={`Add one ${item.name}`}
+                          aria-label={`Shto ${item.name}`}
                           onClick={(e) => {
                             e.stopPropagation()
                             cart.addItem(item)
@@ -263,10 +267,11 @@ export default function OrderPage() {
           onClick={() => setScreen('review')}
         >
           <span className="cart-bar-count">
-            {cart.itemCount} {cart.itemCount === 1 ? 'item' : 'items'}
+            {cart.itemCount}{' '}
+            {cart.itemCount === 1 ? sq.itemOne : sq.items}
           </span>
           <span className="cart-bar-total">{formatEuro(cart.total)}</span>
-          <span className="cart-bar-cta">View Order</span>
+          <span className="cart-bar-cta">{sq.viewOrder}</span>
         </button>
       )}
     </div>

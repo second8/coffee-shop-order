@@ -16,7 +16,6 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(supabaseUrl!, supabaseAnonKey!)
   : null
 
-/** Local demo store when Supabase is not configured — same browser, full flow works. */
 const DEMO_KEY = 'cafe-sol-demo-orders'
 const DEMO_EVENT = 'cafe-sol-demo-orders-changed'
 
@@ -49,35 +48,34 @@ function startOfLocalDay(d = new Date()): Date {
   return x
 }
 
-/** Sanitize cart against the real menu so clients cannot invent items or prices. */
 export function sanitizeOrderInput(
   tableNumber: number,
   items: CartItem[]
 ): { items: CartItem[]; total: number; error: string | null } {
   if (!Number.isInteger(tableNumber) || tableNumber < 1 || tableNumber > MAX_TABLE) {
-    return { items: [], total: 0, error: 'Invalid table number' }
+    return { items: [], total: 0, error: 'Numri i tavolinës është i pavlefshëm' }
   }
 
   if (!Array.isArray(items) || items.length === 0) {
-    return { items: [], total: 0, error: 'Order is empty' }
+    return { items: [], total: 0, error: 'Porosia është bosh' }
   }
 
   if (items.length > MAX_LINES) {
-    return { items: [], total: 0, error: 'Too many items in one order' }
+    return { items: [], total: 0, error: 'Shumë artikuj në një porosi' }
   }
 
   const cleaned: CartItem[] = []
   for (const raw of items) {
     if (!raw || typeof raw.name !== 'string') {
-      return { items: [], total: 0, error: 'Invalid item' }
+      return { items: [], total: 0, error: 'Artikull i pavlefshëm' }
     }
     const price = menuPriceByName.get(raw.name)
     if (price === undefined) {
-      return { items: [], total: 0, error: `Unknown item: ${raw.name}` }
+      return { items: [], total: 0, error: `Artikull i panjohur: ${raw.name}` }
     }
     const quantity = Math.floor(Number(raw.quantity))
     if (!Number.isFinite(quantity) || quantity < 1 || quantity > MAX_QTY_PER_ITEM) {
-      return { items: [], total: 0, error: `Invalid quantity for ${raw.name}` }
+      return { items: [], total: 0, error: `Sasi e pavlefshme për ${raw.name}` }
     }
     cleaned.push({ name: raw.name, price, quantity })
   }
@@ -114,9 +112,10 @@ export async function createOrder(
       total: sanitized.total,
       status: 'pending',
       created_at: new Date().toISOString(),
+      completed_at: null,
+      completed_by: null,
     }
-    const all = readDemoOrders()
-    writeDemoOrders([order, ...all])
+    writeDemoOrders([order, ...readDemoOrders()])
     return { data: order, error: null }
   }
 
@@ -145,7 +144,6 @@ export async function fetchTodayOrders(): Promise<{
   return fetchOrdersSince(startOfLocalDay().toISOString())
 }
 
-/** Fetch orders from a given ISO timestamp (inclusive). Used for sales history. */
 export async function fetchOrdersSince(sinceIso: string): Promise<{
   data: Order[]
   error: string | null
@@ -175,11 +173,21 @@ export async function fetchOrdersSince(sinceIso: string): Promise<{
 }
 
 export async function markOrderDone(
-  orderId: string
+  orderId: string,
+  staffUserId?: string | null
 ): Promise<{ error: string | null }> {
+  const completedAt = new Date().toISOString()
+
   if (!supabase) {
     const all = readDemoOrders().map((o) =>
-      o.id === orderId ? { ...o, status: 'done' as const } : o
+      o.id === orderId
+        ? {
+            ...o,
+            status: 'done' as const,
+            completed_at: completedAt,
+            completed_by: staffUserId ?? 'demo',
+          }
+        : o
     )
     writeDemoOrders(all)
     return { error: null }
@@ -187,7 +195,11 @@ export async function markOrderDone(
 
   const { error } = await supabase
     .from('orders')
-    .update({ status: 'done' })
+    .update({
+      status: 'done',
+      completed_at: completedAt,
+      completed_by: staffUserId ?? null,
+    })
     .eq('id', orderId)
 
   return { error: error?.message ?? null }
@@ -216,6 +228,8 @@ export function ordersToCsv(orders: Order[]): string {
   const header = [
     'id',
     'created_at',
+    'completed_at',
+    'duration_minutes',
     'table_number',
     'status',
     'total',
@@ -225,9 +239,18 @@ export function ordersToCsv(orders: Order[]): string {
     const items = o.items
       .map((i) => `${i.quantity}x ${i.name} @ ${i.price}`)
       .join('; ')
+    let duration = ''
+    if (o.completed_at) {
+      duration = (
+        (new Date(o.completed_at).getTime() - new Date(o.created_at).getTime()) /
+        60000
+      ).toFixed(1)
+    }
     return [
       o.id,
       o.created_at,
+      o.completed_at ?? '',
+      duration,
       String(o.table_number),
       o.status,
       Number(o.total).toFixed(2),
@@ -237,3 +260,68 @@ export function ordersToCsv(orders: Order[]): string {
   return [header.join(','), ...rows].join('\n')
 }
 
+/** Completion duration in seconds; null if not completed with timestamp. */
+export function completionSeconds(order: Order): number | null {
+  if (!oCompleted(order)) return null
+  const ms =
+    new Date(order.completed_at!).getTime() - new Date(order.created_at).getTime()
+  if (ms < 0) return null
+  return Math.round(ms / 1000)
+}
+
+function oCompleted(order: Order): boolean {
+  return order.status === 'done' && Boolean(order.completed_at)
+}
+
+export function buildSpeedStats(orders: Order[]): {
+  count: number
+  avgSeconds: number | null
+  medianSeconds: number | null
+  under5min: number
+  under10min: number
+  samples: { order: Order; seconds: number }[]
+} {
+  const samples = orders
+    .map((order) => {
+      const seconds = completionSeconds(order)
+      return seconds === null ? null : { order, seconds }
+    })
+    .filter((x): x is { order: Order; seconds: number } => x !== null)
+    .sort((a, b) => b.order.created_at.localeCompare(a.order.created_at))
+
+  if (samples.length === 0) {
+    return {
+      count: 0,
+      avgSeconds: null,
+      medianSeconds: null,
+      under5min: 0,
+      under10min: 0,
+      samples: [],
+    }
+  }
+
+  const secs = samples.map((s) => s.seconds).sort((a, b) => a - b)
+  const avg = secs.reduce((a, b) => a + b, 0) / secs.length
+  const mid = Math.floor(secs.length / 2)
+  const median =
+    secs.length % 2 === 0 ? (secs[mid - 1]! + secs[mid]!) / 2 : secs[mid]!
+
+  return {
+    count: samples.length,
+    avgSeconds: avg,
+    medianSeconds: median,
+    under5min: secs.filter((s) => s <= 300).length,
+    under10min: secs.filter((s) => s <= 600).length,
+    samples,
+  }
+}
+
+export function formatDuration(totalSeconds: number): string {
+  if (totalSeconds < 60) return `${totalSeconds}s`
+  const m = Math.floor(totalSeconds / 60)
+  const s = totalSeconds % 60
+  if (m < 60) return s === 0 ? `${m} min` : `${m} min ${s}s`
+  const h = Math.floor(m / 60)
+  const rm = m % 60
+  return `${h}h ${rm}min`
+}

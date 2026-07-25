@@ -1,44 +1,90 @@
--- Coffee Shop Ordering System — Supabase schema
--- Run this in the Supabase SQL Editor (Dashboard → SQL Editor → New query)
+-- Pristina Homemade Muffins — ordering system schema
+-- Run in Supabase SQL Editor (full script is safe to re-run)
 
--- 1. Create orders table
+-- 1. Orders
 CREATE TABLE IF NOT EXISTS orders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   table_number integer NOT NULL,
   items jsonb NOT NULL,
   total decimal(10, 2) NOT NULL,
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'done')),
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  completed_at timestamptz,
+  completed_by uuid REFERENCES auth.users(id)
 );
 
--- 2. Index for dashboard queries (today's orders by time)
+-- Add columns if table already existed from v1
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS completed_at timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS completed_by uuid REFERENCES auth.users(id);
+
 CREATE INDEX IF NOT EXISTS orders_created_at_idx ON orders (created_at DESC);
 CREATE INDEX IF NOT EXISTS orders_status_idx ON orders (status);
 
--- 3. Enable Row Level Security
+-- 2. Staff profiles (role: admin | worker)
+CREATE TABLE IF NOT EXISTS staff_profiles (
+  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  role text NOT NULL CHECK (role IN ('admin', 'worker')),
+  display_name text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE staff_profiles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Staff can read own profile" ON staff_profiles;
+CREATE POLICY "Staff can read own profile"
+  ON staff_profiles FOR SELECT
+  TO authenticated
+  USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Admins can read all profiles" ON staff_profiles;
+CREATE POLICY "Admins can read all profiles"
+  ON staff_profiles FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM staff_profiles sp
+      WHERE sp.id = auth.uid() AND sp.role = 'admin'
+    )
+  );
+
+-- 3. Orders RLS
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 
--- 4. RLS policies (anonymous customers + open dashboard for v1)
+-- Customers (no login): insert only
 DROP POLICY IF EXISTS "Allow anonymous inserts" ON orders;
 CREATE POLICY "Allow anonymous inserts"
   ON orders FOR INSERT
   TO anon
   WITH CHECK (true);
 
+-- Also allow authenticated insert (edge cases)
+DROP POLICY IF EXISTS "Allow authenticated inserts" ON orders;
+CREATE POLICY "Allow authenticated inserts"
+  ON orders FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+-- Staff only: read
 DROP POLICY IF EXISTS "Allow read orders" ON orders;
-CREATE POLICY "Allow read orders"
+DROP POLICY IF EXISTS "Staff can read orders" ON orders;
+CREATE POLICY "Staff can read orders"
   ON orders FOR SELECT
-  TO anon
+  TO authenticated
   USING (true);
 
+-- Staff only: update (mark done)
 DROP POLICY IF EXISTS "Allow update status" ON orders;
-CREATE POLICY "Allow update status"
+DROP POLICY IF EXISTS "Staff can update orders" ON orders;
+CREATE POLICY "Staff can update orders"
   ON orders FOR UPDATE
-  TO anon
+  TO authenticated
   USING (true)
   WITH CHECK (true);
 
--- 5. Enable Realtime for the orders table
--- In Supabase Dashboard: Database → Publications → supabase_realtime
--- or run:
-ALTER PUBLICATION supabase_realtime ADD TABLE orders;
+-- 4. Realtime
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE orders;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;

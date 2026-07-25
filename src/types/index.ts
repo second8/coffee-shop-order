@@ -23,4 +23,15 @@ export interface Order {
   total: number
   status: OrderStatus
   created_at: string
+  completed_at?: string | null
+  completed_by?: string | null
+}
+
+export type StaffRole = 'admin' | 'worker'
+
+export interface StaffProfile {
+  id: string
+  email: string
+  role: StaffRole
+  display_name: string | null
 }

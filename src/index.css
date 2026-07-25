@@ -274,6 +274,26 @@ code {
   gap: 0.55rem;
 }
 
+.order-brand-text {
+  text-align: left;
+}
+
+.order-menu-kicker {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--terracotta);
+  margin: 0;
+}
+
+.home-kicker {
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--terracotta);
+  font-size: 1rem;
+  margin: 0 0 0.25rem;
+}
+
 .order-brand-mark {
   width: 1.75rem;
   height: 1.75rem;
@@ -287,10 +307,11 @@ code {
 
 .order-shop-name {
   font-family: var(--font-display);
-  font-size: 1.65rem;
+  font-size: 1.25rem;
   font-weight: 500;
   letter-spacing: -0.03em;
   color: var(--ink);
+  line-height: 1.2;
 }
 
 .order-table-label {
@@ -908,14 +929,8 @@ code {
 
 .sales-summary {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 0.75rem;
-}
-
-@media (max-width: 560px) {
-  .sales-summary {
-    grid-template-columns: 1fr;
-  }
 }
 
 .sales-stat-card {
@@ -1002,6 +1017,78 @@ code {
   background: #f8e0dc;
   border: 1px solid #e5b0a8;
   color: var(--danger);
+}
+
+.banner-info {
+  background: #e8eef5;
+  border: 1px solid #c5d0de;
+  color: #3a4a5c;
+}
+
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.role-pill.role-admin {
+  background: #3d342c;
+  color: #f0c9a8;
+  border: 1px solid #6a5a4c;
+}
+
+.role-pill.role-worker {
+  background: #2a241f;
+  color: #a89888;
+  border: 1px solid #3d342c;
+}
+
+.login-card {
+  max-width: 360px;
+  text-align: left;
+}
+
+.login-card h1,
+.login-card > p:first-of-type {
+  text-align: center;
+}
+
+.field-label {
+  display: block;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #a89888;
+  margin-top: 0.35rem;
+}
+
+.text-input {
+  width: 100%;
+  min-height: 48px;
+  border-radius: var(--radius-sm);
+  border: 1px solid #3d342c;
+  background: #2a241f;
+  color: #f5efe6;
+  padding: 0.65rem 0.85rem;
+  outline: none;
+  margin-bottom: 0.35rem;
+}
+
+.text-input:focus {
+  border-color: var(--terracotta);
+}
+
+.login-help {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #8a7b70;
+  margin-top: 0.75rem;
+  line-height: 1.4;
 }
 
 .dashboard-main {
