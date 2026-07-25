@@ -292,19 +292,17 @@ async function patchOrder(
   const { error } = await supabase.from('orders').update(safePatch).eq('id', orderId)
   if (!error) return { error: null }
 
-  // Retry with only status if optional columns missing
+  // Retry with only status if optional columns missing (not for cancelled —
+  // that needs the check constraint migration)
   if (
-    error.message.includes('archived_at') ||
     error.message.includes('completed_at') ||
     error.message.includes('completed_by') ||
-    error.message.includes('cancelled')
+    error.message.includes('archived_at')
   ) {
-    if (typeof safePatch.status === 'string') {
-      const status =
-        safePatch.status === 'cancelled' ? 'done' : (safePatch.status as string)
+    if (typeof safePatch.status === 'string' && safePatch.status !== 'cancelled') {
       const { error: e2 } = await supabase
         .from('orders')
-        .update({ status })
+        .update({ status: safePatch.status })
         .eq('id', orderId)
       if (!e2) return { error: null }
       return { error: e2.message }
@@ -313,6 +311,9 @@ async function patchOrder(
 
   return { error: error.message }
 }
+
+const CANCEL_SQL_HINT =
+  'Në Supabase SQL Editor ekzekuto: ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check; ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (status IN (\'pending\', \'done\', \'cancelled\'));'
 
 export async function markOrderDone(
   orderId: string,
@@ -329,11 +330,23 @@ export async function cancelOrder(
   orderId: string,
   staffUserId?: string | null
 ): Promise<{ error: string | null }> {
-  return patchOrder(orderId, {
+  const result = await patchOrder(orderId, {
     status: 'cancelled',
     completed_at: new Date().toISOString(),
     completed_by: staffUserId ?? null,
   })
+
+  if (!result.error) return result
+
+  // Constraint still only allows pending|done — need migration
+  if (
+    result.error.includes('orders_status_check') ||
+    result.error.includes('check constraint')
+  ) {
+    return { error: CANCEL_SQL_HINT }
+  }
+
+  return result
 }
 
 export async function archiveOrder(orderId: string): Promise<{ error: string | null }> {
