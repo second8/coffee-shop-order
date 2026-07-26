@@ -17,10 +17,19 @@ export const sq = {
   bringToTable: (n: number) => `Do t’jua sjellim te tavolina ${n}.`,
   orderAgain: 'Porosit përsëri',
   homeTitle: 'Porosi nga tavolina',
+  homeScanQr: 'Skanoni kodin QR në tavolinën tuaj për të porositur.',
   homeCustomer: 'Hap menunë e klientit (Tavolina 3)',
-  homeStaff: 'Paneli i stafit',
+  homeStaff: 'Stafi',
   homeDemo:
     'Demo — porositë ruhen në këtë shfletues. Për live, lidhni Supabase.',
+  orderFailed: 'Porosia dështoi. Provo përsëri.',
+  realtimeOffline: 'Lidhja u ndërpre — rifreskimi…',
+  realtimeOnline: 'Lidhur live',
+  cancelChipLeft: 'Klient u largua',
+  cancelChipWrong: 'Gabim porosi',
+  cancelChipDouble: 'Dyfish',
+  cancelChipOther: 'Tjetër',
+  dimmedLegend: 'E zbehtë = ende në shank',
 
   /** Optional note on order (customer or staff) */
   orderNote: 'Shënim',

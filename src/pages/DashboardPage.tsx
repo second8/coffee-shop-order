@@ -28,6 +28,7 @@ import {
   cancelOrder,
   createOrder,
   deleteOrderForever,
+  endStaffSession,
   fetchArchivedOrders,
   fetchOrdersSince,
   fetchStaffNameMap,
@@ -752,6 +753,7 @@ export default function DashboardPage() {
   const [showCompleted, setShowCompleted] = useState(true)
   const [showCancelled, setShowCancelled] = useState(true)
   const [soundEnabled, setSoundEnabled] = useState(true)
+  const [realtimeOk, setRealtimeOk] = useState(true)
   const [tab, setTab] = useState<Tab>('live')
   const [salesRange, setSalesRange] = useState<SalesRange>('today')
   const [salesOrders, setSalesOrders] = useState<Order[]>([])
@@ -945,63 +947,102 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!profile || !supabase) return
     const client = supabase
-    const channel = client
-      .channel('orders-realtime-v2')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const order = payload.new as Order
-            const start = new Date()
-            start.setHours(0, 0, 0, 0)
-            if (new Date(order.created_at) >= start && !order.archived_at) {
+    let disposed = false
+    let channel = client.channel('orders-realtime-v2')
+
+    const attach = () => {
+      channel = client
+        .channel(`orders-realtime-${Date.now()}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'orders' },
+          (payload) => {
+            if (payload.eventType === 'INSERT') {
+              const order = payload.new as Order
+              const start = new Date()
+              start.setHours(0, 0, 0, 0)
+              if (new Date(order.created_at) >= start && !order.archived_at) {
+                setOrders((prev) => {
+                  if (prev.some((o) => o.id === order.id)) return prev
+                  return [order, ...prev]
+                })
+              }
+              if (
+                readyForSoundRef.current &&
+                soundEnabled &&
+                !knownIdsRef.current.has(order.id)
+              ) {
+                playNotificationSound()
+              }
+              knownIdsRef.current.add(order.id)
+            }
+            if (payload.eventType === 'UPDATE') {
+              const order = payload.new as Order
               setOrders((prev) => {
-                if (prev.some((o) => o.id === order.id)) return prev
-                return [order, ...prev]
+                if (order.archived_at)
+                  return prev.filter((o) => o.id !== order.id)
+                const exists = prev.some((o) => o.id === order.id)
+                if (!exists) return [order, ...prev]
+                return prev.map((o) => (o.id === order.id ? order : o))
+              })
+              setArchive((prev) => {
+                if (order.archived_at) {
+                  const exists = prev.some((o) => o.id === order.id)
+                  return exists
+                    ? prev.map((o) => (o.id === order.id ? order : o))
+                    : [order, ...prev]
+                }
+                return prev.filter((o) => o.id !== order.id)
               })
             }
-            if (
-              readyForSoundRef.current &&
-              soundEnabled &&
-              !knownIdsRef.current.has(order.id)
-            ) {
-              playNotificationSound()
-            }
-            knownIdsRef.current.add(order.id)
-          }
-          if (payload.eventType === 'UPDATE') {
-            const order = payload.new as Order
-            setOrders((prev) => {
-              if (order.archived_at) return prev.filter((o) => o.id !== order.id)
-              const exists = prev.some((o) => o.id === order.id)
-              if (!exists) return [order, ...prev]
-              return prev.map((o) => (o.id === order.id ? order : o))
-            })
-            setArchive((prev) => {
-              if (order.archived_at) {
-                const exists = prev.some((o) => o.id === order.id)
-                return exists
-                  ? prev.map((o) => (o.id === order.id ? order : o))
-                  : [order, ...prev]
+            if (payload.eventType === 'DELETE') {
+              const old = payload.old as { id?: string }
+              if (old.id) {
+                setOrders((prev) => prev.filter((o) => o.id !== old.id))
+                setArchive((prev) => prev.filter((o) => o.id !== old.id))
               }
-              return prev.filter((o) => o.id !== order.id)
-            })
-          }
-          if (payload.eventType === 'DELETE') {
-            const old = payload.old as { id?: string }
-            if (old.id) {
-              setOrders((prev) => prev.filter((o) => o.id !== old.id))
-              setArchive((prev) => prev.filter((o) => o.id !== old.id))
             }
           }
-        }
-      )
-      .subscribe()
+        )
+        .subscribe((status) => {
+          if (disposed) return
+          if (status === 'SUBSCRIBED') {
+            setRealtimeOk(true)
+          }
+          if (
+            status === 'CHANNEL_ERROR' ||
+            status === 'TIMED_OUT' ||
+            status === 'CLOSED'
+          ) {
+            setRealtimeOk(false)
+            void loadOrders()
+            window.setTimeout(() => {
+              if (disposed) return
+              void client.removeChannel(channel)
+              attach()
+            }, 2000)
+          }
+        })
+    }
+
+    attach()
     return () => {
+      disposed = true
       void client.removeChannel(channel)
     }
-  }, [profile, soundEnabled])
+  }, [profile, soundEnabled, loadOrders])
+
+  // End work session when tab closes (best effort)
+  useEffect(() => {
+    if (!profile) return
+    const onPageHide = () => {
+      void endStaffSession()
+    }
+    window.addEventListener('pagehide', onPageHide)
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+    }
+  }, [profile])
 
   // Tick every 30s so wait times / priority update without refresh
   const [, setBoardTick] = useState(0)
@@ -1439,6 +1480,9 @@ export default function DashboardPage() {
           <strong>Demo</strong> — {sq.demoBanner}
         </div>
       )}
+      {!realtimeOk && isSupabaseConfigured && (
+        <div className="banner banner-warn">{sq.realtimeOffline}</div>
+      )}
       {error && <div className="banner banner-error">{error}</div>}
       {sessionHint && tab === 'team' && (
         <div className="banner banner-info">{sessionHint}</div>
@@ -1540,6 +1584,7 @@ export default function DashboardPage() {
                     {sq.unpaidBills}
                     <span className="section-count">{tableBills.length}</span>
                   </h2>
+                  <p className="section-hint">{sq.dimmedLegend}</p>
                   {loading ? (
                     <p className="empty-state">{sq.loading}</p>
                   ) : tableBills.length === 0 ? (

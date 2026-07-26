@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { menu, MENU_TITLE, SHOP_NAME } from '../data/menu'
 import { useCart } from '../hooks/useCart'
@@ -21,6 +21,7 @@ export default function OrderPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [note, setNote] = useState('')
+  const submitLock = useRef(false)
   const [lastOrder, setLastOrder] = useState<{
     items: CartItem[]
     total: number
@@ -28,28 +29,35 @@ export default function OrderPage() {
   } | null>(null)
 
   const handleSubmit = async () => {
-    if (cart.items.length === 0 || submitting) return
+    if (cart.items.length === 0 || submitting || submitLock.current) return
+    submitLock.current = true
     setSubmitting(true)
     setSubmitError(null)
-    const { error } = await createOrder(
-      tableNumber,
-      cart.items,
-      cart.total,
-      note
-    )
-    setSubmitting(false)
-    if (error) {
-      setSubmitError(error)
-      return
+    try {
+      const { error } = await createOrder(
+        tableNumber,
+        cart.items,
+        cart.total,
+        note
+      )
+      if (error) {
+        setSubmitError(error || sq.orderFailed)
+        return
+      }
+      setLastOrder({
+        items: cart.items,
+        total: cart.total,
+        note: note.trim() || null,
+      })
+      cart.clear()
+      setNote('')
+      setScreen('confirmation')
+    } catch {
+      setSubmitError(sq.orderFailed)
+    } finally {
+      setSubmitting(false)
+      submitLock.current = false
     }
-    setLastOrder({
-      items: cart.items,
-      total: cart.total,
-      note: note.trim() || null,
-    })
-    cart.clear()
-    setNote('')
-    setScreen('confirmation')
   }
 
   if (!hasValidTable) {

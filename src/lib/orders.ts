@@ -321,19 +321,11 @@ export async function createOrder(
     })
     if (apiRes.ok) {
       const body = (await apiRes.json()) as { data?: Order }
-      if (body.data) return { data: body.data, error: null }
-      // Created on server but body missing — still do not double-insert
+      if (body.data?.id) return { data: body.data, error: null }
+      // Never invent IDs — would desync with realtime / double cards
       return {
-        data: {
-          id: crypto.randomUUID(),
-          table_number: tableNumber,
-          items: sanitized.items,
-          total: sanitized.total,
-          status: 'pending',
-          created_at: new Date().toISOString(),
-          note: cleanNote,
-        },
-        error: null,
+        data: null,
+        error: 'Porosia u dërgua por mungon përgjigja. Rifresko panelin.',
       }
     }
     // 4xx from API = validation; don't fall through (would create second row on 5xx race)

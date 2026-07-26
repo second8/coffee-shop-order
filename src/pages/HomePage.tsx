@@ -1,8 +1,11 @@
 import { Link } from 'react-router-dom'
-import { isSupabaseConfigured } from '../lib/orders'
-import { MENU_TITLE, SHOP_NAME } from '../data/menu'
+import { MENU_TITLE, SHOP_NAME, INSTAGRAM } from '../data/menu'
 import { sq } from '../i18n/sq'
 
+/**
+ * Public landing — customers use QR codes, not this page.
+ * Staff/QR tools are not advertised to walk-in guests.
+ */
 export default function HomePage() {
   return (
     <div className="home-page">
@@ -10,24 +13,14 @@ export default function HomePage() {
         <p className="home-kicker">{MENU_TITLE}</p>
         <h1>{SHOP_NAME}</h1>
         <p className="home-sub">{sq.homeTitle}</p>
-
-        <div className="home-links">
-          <Link className="btn btn-primary btn-block" to="/order?table=3">
-            {sq.homeCustomer}
-          </Link>
-          <Link className="btn btn-secondary btn-block" to="/dashboard">
-            {sq.homeStaff}
-          </Link>
-          <Link className="btn btn-secondary btn-block" to="/qr">
-            Kodet QR (30 tavolina)
-          </Link>
-        </div>
-
-        {!isSupabaseConfigured && (
-          <div className="home-mode is-demo">
-            <strong>Demo</strong> — {sq.homeDemo}
-          </div>
+        <p className="home-scan-hint">{sq.homeScanQr}</p>
+        {INSTAGRAM && (
+          <p className="home-ig">{INSTAGRAM}</p>
         )}
+        {/* Staff entry is intentional but de-emphasized (not a demo CTA) */}
+        <Link className="home-staff-link" to="/dashboard">
+          {sq.homeStaff}
+        </Link>
       </div>
     </div>
   )

@@ -1,28 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import menuJson from '../shared/menu.json'
 
 /**
  * Server-side order insert using service role so customers
  * are not blocked by RLS. Service key stays on the server only.
+ * Prices from shared/menu.json (same as frontend).
  */
-const MENU: Record<string, number> = {
-  'Freddo Espresso': 2.5,
-  'Espresso Tonic': 2.5,
-  'Iced Coffee': 2.0,
-  Frappe: 2.0,
-  Affogato: 2.5,
-  'Greek cake with caramel ice cream': 3.0,
-  'Brownie with vanilla ice cream': 3.0,
-  'Classic Lemonade': 2.0,
-  'Mango Lemonade': 2.0,
-  'Strawberry Lemonade': 2.0,
-  'Passion Fruit Lemonade': 2.0,
-  'Aperol Spritz': 4.0,
-  'Rosé Lemonade': 3.0,
-  'Fresh Iced Tea': 2.5,
-  'Vodka Sour Passion Fruit': 5.0,
-  Mimosa: 4.0,
-  'Wine (red/white)': 4.0,
+const MENU: Record<string, number> = {}
+for (const cat of menuJson.categories) {
+  for (const item of cat.items) {
+    MENU[item.name] = item.price
+  }
 }
 
 type CartLine = { name: string; price: number; quantity: number }
@@ -30,7 +19,9 @@ type CartLine = { name: string; price: number; quantity: number }
 function sanitize(
   tableNumber: unknown,
   items: unknown
-): { ok: true; table: number; items: CartLine[]; total: number } | { ok: false; error: string } {
+):
+  | { ok: true; table: number; items: CartLine[]; total: number }
+  | { ok: false; error: string } {
   const table = Number(tableNumber)
   if (!Number.isInteger(table) || table < 1 || table > 100) {
     return { ok: false, error: 'Numri i tavolinës është i pavlefshëm' }
@@ -100,9 +91,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   if (note) row.note = note
 
-  let { data, error } = await supabase.from('orders').insert(row).select().single()
+  let { data, error } = await supabase
+    .from('orders')
+    .insert(row)
+    .select(
+      'id,table_number,items,total,status,created_at,completed_at,completed_by,archived_at,note,paid_at,paid_by'
+    )
+    .single()
 
-  // If note column missing, insert without it
   if (error && note && String(error.message).toLowerCase().includes('note')) {
     const retry = await supabase
       .from('orders')
@@ -112,7 +108,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         total: sanitized.total,
         status: 'pending',
       })
-      .select()
+      .select(
+        'id,table_number,items,total,status,created_at,completed_at,completed_by'
+      )
       .single()
     data = retry.data
     error = retry.error
@@ -120,6 +118,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (error) {
     res.status(400).json({ error: error.message })
+    return
+  }
+
+  if (!data?.id) {
+    res.status(500).json({ error: 'Porosia u krijua por mungon id' })
     return
   }
 

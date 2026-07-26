@@ -335,13 +335,14 @@ code {
 
 .menu-category {
   font-family: var(--font-body);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  letter-spacing: 0.28em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--ink-muted);
-  padding-bottom: 0.5rem;
+  padding: 0.15rem 0 0.5rem 0.65rem;
   border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--terracotta);
 }
 
 .menu-list {
@@ -381,7 +382,7 @@ code {
 .menu-item-name {
   font-size: 1.05rem;
   font-weight: 500;
-  line-height: 1.3;
+  line-height: 1.35;
   flex: 1;
 }
 
@@ -722,6 +723,7 @@ code {
   transform: translateX(-50%);
   width: calc(100% - 2rem);
   max-width: 448px;
+  min-height: 52px;
   display: grid;
   grid-template-columns: 1fr auto auto;
   align-items: center;
@@ -729,7 +731,7 @@ code {
   padding: 0.95rem 1.15rem;
   background: var(--ink);
   color: var(--paper);
-  border-radius: 999px;
+  border-radius: 12px;
   box-shadow: var(--shadow-strong);
   z-index: 50;
   animation: slide-up 0.35s cubic-bezier(0.22, 1, 0.36, 1);
@@ -2748,6 +2750,57 @@ code {
   border-radius: 6px;
   background: rgba(196, 122, 114, 0.12);
   border: 1px solid rgba(196, 122, 114, 0.35);
+}
+
+.cancel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.65rem;
+}
+
+.cancel-chip {
+  min-height: 40px;
+  padding: 0.4rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cancel-chip.is-active {
+  border-color: var(--terracotta);
+  background: rgba(196, 112, 78, 0.12);
+}
+
+.home-scan-hint {
+  margin: 0.5rem 0 1.25rem;
+  color: var(--ink-muted);
+  line-height: 1.45;
+  font-size: 0.95rem;
+}
+
+.home-ig {
+  margin: 0 0 1.5rem;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.home-staff-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.dashboard-section {
+  margin-bottom: 1rem;
 }
 
 .dashboard-page.theme-admin .order-card.is-bill {

@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 import { sq } from '../i18n/sq'
 
+const CHIPS = [
+  { id: 'left', label: () => sq.cancelChipLeft },
+  { id: 'wrong', label: () => sq.cancelChipWrong },
+  { id: 'double', label: () => sq.cancelChipDouble },
+  { id: 'other', label: () => sq.cancelChipOther },
+] as const
+
 export default function CancelOrderModal({
   tableNumber,
   onClose,
@@ -11,14 +18,22 @@ export default function CancelOrderModal({
   onConfirm: (reason: string) => void | Promise<void>
 }) {
   const [reason, setReason] = useState('')
+  const [chip, setChip] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
     setReason('')
+    setChip(null)
     setErr(null)
     setBusy(false)
   }, [tableNumber])
+
+  const pickChip = (id: string, label: string) => {
+    setChip(id)
+    if (id !== 'other') setReason(label)
+    else if (chip !== 'other') setReason('')
+  }
 
   const submit = async () => {
     const t = reason.trim()
@@ -48,6 +63,18 @@ export default function CancelOrderModal({
         <p className="cancel-modal-sub">
           {sq.table} {tableNumber} — {sq.cancelReasonHint}
         </p>
+        <div className="cancel-chips">
+          {CHIPS.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className={`cancel-chip ${chip === c.id ? 'is-active' : ''}`}
+              onClick={() => pickChip(c.id, c.label())}
+            >
+              {c.label()}
+            </button>
+          ))}
+        </div>
         <textarea
           className="order-note-input"
           rows={3}
@@ -55,7 +82,10 @@ export default function CancelOrderModal({
           autoFocus
           placeholder={sq.cancelReasonPlaceholder}
           value={reason}
-          onChange={(e) => setReason(e.target.value)}
+          onChange={(e) => {
+            setReason(e.target.value)
+            setChip('other')
+          }}
         />
         {err && <p className="form-error">{err}</p>}
         <div className="cancel-modal-actions">
