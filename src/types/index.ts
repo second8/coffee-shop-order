@@ -31,6 +31,8 @@ export interface Order {
   archived_at?: string | null
   /** Customer or staff note */
   note?: string | null
+  /** Why staff cancelled (required on cancel) */
+  cancel_reason?: string | null
   /** Fully settled with customer (waitress) */
   paid_at?: string | null
   paid_by?: string | null

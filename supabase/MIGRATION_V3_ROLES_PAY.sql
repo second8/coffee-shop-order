@@ -11,6 +11,7 @@ ALTER TABLE staff_profiles
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at timestamptz;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_by uuid;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_events jsonb DEFAULT '[]'::jsonb;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_reason text;
 
 CREATE INDEX IF NOT EXISTS orders_paid_at_idx ON orders (paid_at);
 CREATE INDEX IF NOT EXISTS orders_table_open_idx

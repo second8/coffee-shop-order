@@ -834,6 +834,20 @@ code {
   text-align: right;
 }
 
+/* Review: scrollable submit (no fixed footer — phone keyboard safe) */
+.order-review-page .review-main-scroll {
+  padding-bottom: calc(2rem + var(--safe-bottom, 0px));
+}
+
+.review-submit-block {
+  margin-top: 1.25rem;
+  padding: 1rem 0 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
 .review-footer {
   position: fixed;
   left: 50%;
@@ -2601,6 +2615,52 @@ code {
   font-size: 0.88rem;
   font-weight: 700;
   color: #2d8a4e;
+}
+
+.cancel-modal {
+  width: min(420px, 100%);
+  margin: auto 1rem;
+  padding: 1.25rem 1.15rem 1.15rem;
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.dashboard-page.theme-admin .cancel-modal {
+  background: #1e1a16;
+  color: #f0e8dc;
+  border-color: #3d342c;
+}
+
+.cancel-modal h2 {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+}
+
+.cancel-modal-sub {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+}
+
+.cancel-modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.85rem;
+}
+
+.cancel-reason-line {
+  margin: 0.5rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(196, 122, 114, 0.12);
+  border: 1px solid rgba(196, 122, 114, 0.35);
 }
 
 .dashboard-page.theme-admin .order-card.is-bill {

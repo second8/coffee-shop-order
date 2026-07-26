@@ -115,7 +115,7 @@ export default function OrderPage() {
 
   if (screen === 'review') {
     return (
-      <div className="order-page">
+      <div className="order-page order-review-page">
         <header className="order-header">
           <button
             type="button"
@@ -130,7 +130,7 @@ export default function OrderPage() {
           </p>
         </header>
 
-        <main className="review-main">
+        <main className="review-main review-main-scroll">
           {cart.items.length === 0 ? (
             <p className="empty-cart">{sq.emptyCart}</p>
           ) : (
@@ -171,42 +171,44 @@ export default function OrderPage() {
               ))}
             </ul>
           )}
-          {cart.items.length > 0 && (
-            <div className="order-note-field">
-              <label className="order-note-label" htmlFor="order-note">
-                {sq.orderNote}
-              </label>
-              <p className="order-note-hint">{sq.orderNoteHint}</p>
-              <textarea
-                id="order-note"
-                className="order-note-input"
-                rows={3}
-                maxLength={280}
-                placeholder={sq.orderNotePlaceholder}
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-              />
-            </div>
-          )}
-          {submitError && <p className="form-error">{submitError}</p>}
-        </main>
 
-        {cart.items.length > 0 && (
-          <footer className="review-footer">
-            <div className="review-total-row">
-              <span>{sq.total}</span>
-              <strong>{formatEuro(cart.total)}</strong>
-            </div>
-            <button
-              type="button"
-              className="btn btn-primary btn-block btn-lg"
-              disabled={submitting}
-              onClick={handleSubmit}
-            >
-              {submitting ? sq.sending : sq.placeOrder}
-            </button>
-          </footer>
-        )}
+          {cart.items.length > 0 && (
+            <>
+              <div className="order-note-field">
+                <label className="order-note-label" htmlFor="order-note">
+                  {sq.orderNote}
+                </label>
+                <p className="order-note-hint">{sq.orderNoteHint}</p>
+                <textarea
+                  id="order-note"
+                  className="order-note-input"
+                  rows={3}
+                  maxLength={280}
+                  placeholder={sq.orderNotePlaceholder}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  enterKeyHint="done"
+                />
+              </div>
+
+              <div className="review-submit-block">
+                <div className="review-total-row">
+                  <span>{sq.total}</span>
+                  <strong>{formatEuro(cart.total)}</strong>
+                </div>
+                {submitError && <p className="form-error">{submitError}</p>}
+                <button
+                  type="button"
+                  className="btn btn-primary btn-block btn-lg"
+                  disabled={submitting}
+                  onClick={() => void handleSubmit()}
+                >
+                  {submitting ? sq.sending : sq.placeOrder}
+                </button>
+              </div>
+            </>
+          )}
+        </main>
       </div>
     )
   }

@@ -414,7 +414,7 @@ async function orderSelectCols(): Promise<string> {
   let cols = ORDER_SELECT_BASE
   if (hasArchive) cols += ',archived_at'
   if (hasNote) cols += ',note'
-  if (hasPaid) cols += ',paid_at,paid_by,payment_events'
+  if (hasPaid) cols += ',paid_at,paid_by,payment_events,cancel_reason'
   return cols
 }
 
@@ -992,17 +992,39 @@ export async function markOrderDone(
 
 export async function cancelOrder(
   orderId: string,
-  staffUserId?: string | null
+  staffUserId?: string | null,
+  reason?: string | null
 ): Promise<{ error: string | null }> {
-  const result = await patchOrder(orderId, {
+  const cleanReason = (reason || '').trim().replace(/\s+/g, ' ').slice(0, 200)
+  if (cleanReason.length < 3) {
+    return { error: 'Shkruaj arsyen e anulimit (min. 3 shkronja)' }
+  }
+
+  const patch: Partial<Order> = {
     status: 'cancelled',
     completed_at: new Date().toISOString(),
     completed_by: staffUserId ?? null,
-  })
+    cancel_reason: cleanReason,
+  }
+  const result = await patchOrder(orderId, patch)
 
   if (!result.error) return result
 
-  // Constraint still only allows pending|done — need migration
+  // Retry without cancel_reason if column missing
+  if (result.error.toLowerCase().includes('cancel_reason')) {
+    const { cancel_reason: _c, ...rest } = patch
+    void _c
+    const r2 = await patchOrder(orderId, rest)
+    if (!r2.error) return r2
+    if (
+      r2.error.includes('orders_status_check') ||
+      r2.error.includes('check constraint')
+    ) {
+      return { error: CANCEL_SQL_HINT }
+    }
+    return r2
+  }
+
   if (
     result.error.includes('orders_status_check') ||
     result.error.includes('check constraint')

@@ -61,6 +61,7 @@ import {
 } from '../lib/staffRoles'
 import TablePayModal from '../components/TablePayModal'
 import AdminWipePanel from '../components/AdminWipePanel'
+import CancelOrderModal from '../components/CancelOrderModal'
 import { menu } from '../data/menu'
 import { TABLE_COUNT } from '../data/config'
 import {
@@ -368,6 +369,13 @@ function OrderCard({
           </p>
         )}
 
+      {variant === 'cancelled' && order.cancel_reason && (
+        <p className="cancel-reason-line">
+          <span className="paid-k">{sq.cancelReasonLabel}</span>{' '}
+          {order.cancel_reason}
+        </p>
+      )}
+
       <div className="order-card-actions">
         {variant === 'pending' && onDone && (
           <button
@@ -382,9 +390,7 @@ function OrderCard({
           <button
             type="button"
             className="btn btn-ghost"
-            onClick={() => {
-              if (window.confirm(sq.confirmCancel)) onCancel(order.id)
-            }}
+            onClick={() => onCancel(order.id)}
           >
             {sq.cancel}
           </button>
@@ -398,13 +404,11 @@ function OrderCard({
             {sq.pay}
           </button>
         )}
-        {variant === 'bill' && onCancel && order.status === 'pending' && (
+        {variant === 'bill' && onCancel && (
           <button
             type="button"
             className="btn btn-ghost"
-            onClick={() => {
-              if (window.confirm(sq.confirmCancel)) onCancel(order.id)
-            }}
+            onClick={() => onCancel(order.id)}
           >
             {sq.cancel}
           </button>
@@ -735,6 +739,7 @@ export default function DashboardPage() {
   const [loginError, setLoginError] = useState<string | null>(null)
   const [loggingIn, setLoggingIn] = useState(false)
   const [payBill, setPayBill] = useState<TableBill | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
 
   const [orders, setOrders] = useState<Order[]>([])
   const [archive, setArchive] = useState<Order[]>([])
@@ -1028,16 +1033,25 @@ export default function DashboardPage() {
     }
   }
 
-  const handleCancel = async (id: string) => {
+  const handleCancel = (id: string) => {
+    const order = orders.find((o) => o.id === id)
+    if (order) setCancelTarget(order)
+  }
+
+  const confirmCancelWithReason = async (reason: string) => {
+    if (!cancelTarget) return
+    const id = cancelTarget.id
     const now = new Date().toISOString()
     patchLocal(id, {
       status: 'cancelled',
       completed_at: now,
       completed_by: profile?.id ?? null,
+      cancel_reason: reason,
     })
-    const { error: err } = await cancelOrder(id, profile?.id)
+    setCancelTarget(null)
+    const { error: err } = await cancelOrder(id, profile?.id, reason)
     if (err) {
-      setError(err + ' — ' + sq.migrationHint)
+      setError(err)
       void loadOrders()
     }
   }
@@ -1156,13 +1170,23 @@ export default function DashboardPage() {
     [activeOrders]
   )
 
-  const tableBillsInKitchen = useMemo(
-    () => allTableBills.filter((b) => b.hasPending && b.hasReady),
+  /** Tables ready to collect (have gati unpaid) — for admin "presin pagesë" */
+  const tableBillsReady = useMemo(
+    () => allTableBills.filter((b) => b.hasReady),
     [allTableBills]
   )
-  const tableBillsReady = useMemo(
-    () => allTableBills.filter((b) => b.allReady),
-    [allTableBills]
+
+  /** Kitchen-ready tickets not yet paid (for "gati për shërbim") */
+  const readyForService = useMemo(
+    () =>
+      activeOrders
+        .filter((o) => o.status === 'done' && !isOrderFullyPaid(o))
+        .sort(
+          (a, b) =>
+            new Date(b.completed_at || b.created_at).getTime() -
+            new Date(a.completed_at || a.created_at).getTime()
+        ),
+    [activeOrders]
   )
 
   const dailyRevenue = useMemo(
@@ -1435,13 +1459,12 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Barista (shankist): kitchen only */}
+            {/* Barista (shankist) */}
             {isKitchen && !isAdmin && (
               <>
-                <p className="board-role-hint">{sq.kitchenHint}</p>
                 <section className="dashboard-section">
                   <h2 className="section-label">
-                    {sq.kitchenBoard}
+                    {sq.sectionOrdering}
                     <span className="section-count">
                       {kitchenPending.length}
                     </span>
@@ -1458,41 +1481,118 @@ export default function DashboardPage() {
                           order={order}
                           variant="pending"
                           onDone={handleDone}
+                          onCancel={handleCancel}
                           doneLabel={sq.markReady}
                         />
                       ))}
                     </div>
                   )}
                 </section>
+                <section className="dashboard-section">
+                  <button
+                    type="button"
+                    className="section-toggle"
+                    onClick={() => setShowCompleted((v) => !v)}
+                  >
+                    <h2 className="section-label">
+                      {sq.completedOrders}
+                      <span className="section-count">
+                        {
+                          activeOrders.filter(
+                            (o) =>
+                              o.status === 'done' &&
+                              o.completed_by === profile.id
+                          ).length
+                        }
+                      </span>
+                    </h2>
+                    <span className="chevron">
+                      {showCompleted ? '▾' : '▸'}
+                    </span>
+                  </button>
+                  {showCompleted && (
+                    <div className="order-list">
+                      {activeOrders
+                        .filter(
+                          (o) =>
+                            o.status === 'done' &&
+                            o.completed_by === profile.id
+                        )
+                        .map((order) => (
+                          <OrderCard
+                            key={order.id}
+                            order={order}
+                            variant="done"
+                            staffName={profile.display_name || undefined}
+                          />
+                        ))}
+                    </div>
+                  )}
+                </section>
               </>
             )}
 
-            {/* Waitress (kamerier): open bills until paid */}
+            {/* Kamerier */}
             {isWaitress && !isAdmin && (
-              <section className="dashboard-section">
-                <h2 className="section-label">
-                  {sq.unpaidBills}
-                  <span className="section-count">{tableBills.length}</span>
-                </h2>
-                {loading ? (
-                  <p className="empty-state">{sq.loading}</p>
-                ) : tableBills.length === 0 ? (
-                  <p className="empty-state">{sq.noUnpaid}</p>
-                ) : (
-                  <div className="order-grid">
-                    {tableBills.map((bill) => (
-                      <TableBillCard
-                        key={bill.table}
-                        bill={bill}
-                        onPay={() => setPayBill(bill)}
-                      />
+              <>
+                <section className="dashboard-section">
+                  <h2 className="section-label">
+                    {sq.unpaidBills}
+                    <span className="section-count">{tableBills.length}</span>
+                  </h2>
+                  {loading ? (
+                    <p className="empty-state">{sq.loading}</p>
+                  ) : tableBills.length === 0 ? (
+                    <p className="empty-state">{sq.noUnpaid}</p>
+                  ) : (
+                    <div className="order-grid">
+                      {tableBills.map((bill) => (
+                        <TableBillCard
+                          key={bill.table}
+                          bill={bill}
+                          onPay={() => setPayBill(bill)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+                <section className="dashboard-section">
+                  <button
+                    type="button"
+                    className="section-toggle"
+                    onClick={() => setShowCompleted((v) => !v)}
+                  >
+                    <h2 className="section-label">
+                      {sq.completedOrders}
+                      <span className="section-count">{paidToday.length}</span>
+                    </h2>
+                    <span className="chevron">
+                      {showCompleted ? '▾' : '▸'}
+                    </span>
+                  </button>
+                  {showCompleted &&
+                    (paidToday.length === 0 ? (
+                      <p className="empty-state">{sq.noPaidYet}</p>
+                    ) : (
+                      <div className="order-list">
+                        {paidToday.map((order) => (
+                          <OrderCard
+                            key={order.id}
+                            order={order}
+                            variant="paid"
+                            staffName={
+                              staffLabel(order.paid_by) ||
+                              staffLabel(order.completed_by)
+                            }
+                          />
+                        ))}
+                      </div>
                     ))}
-                  </div>
-                )}
-              </section>
+                </section>
+              </>
             )}
 
-            {/* Admin: clear lifecycle sections */}
+            {/* Admin: 4 stages */}
             {isAdmin && (
               <>
                 <section className="dashboard-section status-section status-ordering">
@@ -1502,6 +1602,7 @@ export default function DashboardPage() {
                       {kitchenPending.length}
                     </span>
                   </h2>
+                  <p className="section-hint">{sq.sectionOrderingHint}</p>
                   {loading ? (
                     <p className="empty-state">{sq.loading}</p>
                   ) : kitchenPending.length === 0 ? (
@@ -1526,19 +1627,20 @@ export default function DashboardPage() {
                   <h2 className="section-label">
                     {sq.sectionReadyUnpaid}
                     <span className="section-count">
-                      {tableBillsReady.length}
+                      {readyForService.length}
                     </span>
                   </h2>
                   <p className="section-hint">{sq.sectionReadyHint}</p>
-                  {tableBillsReady.length === 0 ? (
+                  {readyForService.length === 0 ? (
                     <p className="empty-state">{sq.noUnpaid}</p>
                   ) : (
                     <div className="order-grid">
-                      {tableBillsReady.map((bill) => (
-                        <TableBillCard
-                          key={`ready-${bill.table}`}
-                          bill={bill}
-                          onPay={() => setPayBill(bill)}
+                      {readyForService.map((order) => (
+                        <OrderCard
+                          key={`r-${order.id}`}
+                          order={order}
+                          variant="done"
+                          staffName={staffLabel(order.completed_by)}
                         />
                       ))}
                     </div>
@@ -1547,19 +1649,19 @@ export default function DashboardPage() {
 
                 <section className="dashboard-section status-section status-waiting">
                   <h2 className="section-label">
-                    {sq.sectionWaitingKitchen}
+                    {sq.sectionAwaitingPay}
                     <span className="section-count">
-                      {tableBillsInKitchen.length}
+                      {tableBillsReady.length}
                     </span>
                   </h2>
-                  <p className="section-hint">{sq.sectionMixedHint}</p>
-                  {tableBillsInKitchen.length === 0 ? (
+                  <p className="section-hint">{sq.sectionPayHint}</p>
+                  {tableBillsReady.length === 0 ? (
                     <p className="empty-state">—</p>
                   ) : (
                     <div className="order-grid">
-                      {tableBillsInKitchen.map((bill) => (
+                      {tableBillsReady.map((bill) => (
                         <TableBillCard
-                          key={`wait-${bill.table}`}
+                          key={`pay-${bill.table}`}
                           bill={bill}
                           onPay={() => setPayBill(bill)}
                         />
@@ -2218,6 +2320,14 @@ export default function DashboardPage() {
             setPayBill(null)
             void loadOrders()
           }}
+        />
+      )}
+
+      {cancelTarget && (
+        <CancelOrderModal
+          tableNumber={cancelTarget.table_number}
+          onClose={() => setCancelTarget(null)}
+          onConfirm={confirmCancelWithReason}
         />
       )}
     </div>
