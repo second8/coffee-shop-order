@@ -890,50 +890,86 @@ code {
   font-weight: 400;
 }
 
-.order-card.is-client-order {
-  border-left-color: var(--highlight);
-  border-left-width: 8px;
-  background: linear-gradient(
-    125deg,
-    #ffd28a 0%,
-    #ffe8bc 28%,
-    #fff6e4 58%,
-    var(--paper) 100%
-  );
-  box-shadow:
-    0 0 0 1px rgba(255, 164, 37, 0.55),
-    0 10px 28px rgba(255, 164, 37, 0.18),
-    var(--shadow);
-}
-
-.order-card.is-client-order .order-card-table {
-  font-family: var(--font-serif);
-}
-
-.dashboard-page.theme-admin .order-card.is-client-order {
-  background: linear-gradient(
-    125deg,
-    #4a3810 0%,
-    #322818 35%,
-    #1c1815 100%
-  );
-  border-color: #c48920;
-  box-shadow:
-    0 0 0 1px rgba(255, 164, 37, 0.45),
-    0 8px 24px rgba(255, 164, 37, 0.12);
-}
-
-.dashboard-page.theme-worker .order-card.is-client-order {
+/*
+ * Client / office orders — always orange, every state.
+ * Must beat .is-done / .is-paid / .is-cancelled / .is-bill later in the file.
+ */
+.order-card.is-client-order,
+.order-card.is-client-order.is-done,
+.order-card.is-client-order.is-paid,
+.order-card.is-client-order.is-cancelled,
+.order-card.is-client-order.is-archive,
+.order-card.is-client-order.is-bill,
+.order-card.is-client-order.is-ready,
+.order-card.is-client-order.is-mixed,
+.dashboard-page.theme-worker .order-card.is-client-order,
+.dashboard-page.theme-worker .order-card.is-client-order.is-done,
+.dashboard-page.theme-worker .order-card.is-client-order.is-paid,
+.dashboard-page.theme-worker .order-card.is-client-order.is-cancelled,
+.dashboard-page.theme-worker .order-card.is-client-order.is-bill,
+.dashboard-page.theme-worker .order-card.is-client-order.is-ready {
+  border-left-color: var(--highlight) !important;
+  border-left-width: 8px !important;
+  border-color: #e8b45a !important;
   background: linear-gradient(
     125deg,
     #ffd28a 0%,
     #ffe8bc 28%,
     #fff6e4 58%,
     #ffffff 100%
-  );
+  ) !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 164, 37, 0.55),
+    0 10px 28px rgba(255, 164, 37, 0.18),
+    var(--shadow) !important;
+  opacity: 1 !important;
 }
 
-.dashboard-page.theme-admin .client-order-badge {
+.order-card.is-client-order .order-card-table,
+.order-card.is-client-order.is-done .order-card-table,
+.order-card.is-client-order.is-paid .order-card-table {
+  font-family: var(--font-serif);
+  color: #000 !important;
+}
+
+.order-card.is-client-order .order-card-qty,
+.order-card.is-client-order.is-done .order-card-qty {
+  color: #000 !important;
+  background: var(--highlight);
+}
+
+.dashboard-page.theme-admin .order-card.is-client-order,
+.dashboard-page.theme-admin .order-card.is-client-order.is-done,
+.dashboard-page.theme-admin .order-card.is-client-order.is-paid,
+.dashboard-page.theme-admin .order-card.is-client-order.is-cancelled,
+.dashboard-page.theme-admin .order-card.is-client-order.is-archive,
+.dashboard-page.theme-admin .order-card.is-client-order.is-bill {
+  background: linear-gradient(
+    125deg,
+    #4a3810 0%,
+    #322818 35%,
+    #1c1815 100%
+  ) !important;
+  border-color: #c48920 !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 164, 37, 0.45),
+    0 8px 24px rgba(255, 164, 37, 0.12) !important;
+}
+
+.dashboard-page.theme-admin .order-card.is-client-order .order-card-table,
+.dashboard-page.theme-admin .order-card.is-client-order.is-done .order-card-table,
+.dashboard-page.theme-admin .order-card.is-client-order.is-paid .order-card-table {
+  color: #f5efe6 !important;
+}
+
+.dashboard-page.theme-admin .order-card.is-client-order .order-card-qty {
+  color: #000 !important;
+  background: var(--highlight);
+}
+
+.client-order-badge,
+.dashboard-page.theme-admin .client-order-badge,
+.dashboard-page.theme-worker .client-order-badge {
   background: var(--highlight);
   color: #000;
 }

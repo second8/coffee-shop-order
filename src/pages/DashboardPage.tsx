@@ -69,6 +69,7 @@ import {
   isClientOrder,
   normalizeOrderClientFields,
   orderDestinationLabel,
+  resolveClientName,
 } from '../data/stickers'
 import {
   formatEuro,
@@ -197,7 +198,7 @@ function ShowMoreTableBody<T>({
 }
 
 function OrderCard({
-  order,
+  order: orderRaw,
   staffName,
   onDone,
   onCancel,
@@ -221,6 +222,11 @@ function OrderCard({
   showDetails?: boolean
   doneLabel?: string
 }) {
+  // Hydrate sticker name from client_name / note / items meta
+  const order = normalizeOrderClientFields(orderRaw)
+  const clientOrder = isClientOrder(order)
+  const destLabel = orderDestinationLabel(order)
+
   const [, setTick] = useState(0)
   useEffect(() => {
     if (variant !== 'pending' && variant !== 'bill') return
@@ -241,7 +247,7 @@ function OrderCard({
     <article
       className={[
         'order-card',
-        isClientOrder(order) ? 'is-client-order' : '',
+        clientOrder ? 'is-client-order' : '',
         variant === 'pending' ? '' : 'is-done',
         variant === 'cancelled' ? 'is-cancelled' : '',
         variant === 'archive' ? 'is-archive' : '',
@@ -257,13 +263,11 @@ function OrderCard({
     >
       <div className="order-card-top">
         <div>
-          {isClientOrder(order) && (
+          {clientOrder && (
             <span className="client-order-badge">{sq.officeBadge}</span>
           )}
           <h2 className="order-card-table">
-            {isClientOrder(order)
-              ? orderDestinationLabel(order)
-              : `${sq.table} ${order.table_number}`}
+            {clientOrder ? destLabel : `${sq.table} ${order.table_number}`}
           </h2>
           {(variant === 'pending' || variant === 'bill') && (
             <span className={`wait-badge wait-${priority}`}>
@@ -2416,11 +2420,17 @@ function TableBillCard({
     return () => window.clearInterval(id)
   }, [])
 
+  const clientLabel =
+    bill.clientName ||
+    resolveClientName(bill.orders[0] ?? { table_number: bill.table }) ||
+    null
+  const isClientBill = Boolean(clientLabel) || bill.table === 0
+
   return (
     <article
       className={[
         'order-card is-bill',
-        bill.clientName ? 'is-client-order' : '',
+        isClientBill ? 'is-client-order' : '',
         bill.allReady ? 'is-ready' : '',
         bill.hasPending ? 'is-mixed' : '',
       ]
@@ -2429,12 +2439,12 @@ function TableBillCard({
     >
       <div className="order-card-top">
         <div>
-          {bill.clientName && (
+          {isClientBill && (
             <span className="client-order-badge">{sq.officeBadge}</span>
           )}
           <h2 className="order-card-table">
-            {bill.clientName
-              ? bill.clientName
+            {isClientBill
+              ? clientLabel || 'ZYRË / Klient'
               : `${sq.table} ${bill.table}`}
           </h2>
           <span
