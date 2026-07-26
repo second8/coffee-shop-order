@@ -31,6 +31,11 @@ export interface Order {
   archived_at?: string | null
   /** Customer or staff note */
   note?: string | null
+  /**
+   * Named client / office sticker (loyal clients).
+   * When set, table_number is 0 and staff deliver to that office/name.
+   */
+  client_name?: string | null
   /** Why staff cancelled (required on cancel) */
   cancel_reason?: string | null
   /** Fully settled with customer (waitress) */

@@ -1,15 +1,59 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Link, Navigate } from 'react-router-dom'
 import QRCode from 'qrcode'
-import { TABLE_COUNT, orderUrlForTable } from '../data/config'
+import {
+  CLIENT_MIN_ORDER_EUR,
+  loadStickersConfig,
+  orderUrlForClient,
+  orderUrlForTable,
+  sanitizeClientName,
+  saveStickersConfig,
+  type ClientSticker,
+  type StickersConfig,
+} from '../data/stickers'
 import { SHOP_NAME } from '../data/menu'
+import {
+  ensureStaffSession,
+  fetchStaffProfile,
+  getDemoProfile,
+  getSession,
+  isDemoAuth,
+  onAuthChange,
+  signInWithUsername,
+  signOut,
+} from '../lib/auth'
+import { isAdminRole } from '../lib/staffRoles'
+import { sq } from '../i18n/sq'
+import type { StaffProfile } from '../types'
 
-type QrItem = { table: number; url: string; dataUrl: string }
+type TableQr = { kind: 'table'; table: number; dataUrl: string }
+type ClientQr = {
+  kind: 'client'
+  id: string
+  name: string
+  dataUrl: string
+}
+type QrItem = TableQr | ClientQr
 
 export default function QrPrintPage() {
-  const [count, setCount] = useState(TABLE_COUNT)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [profile, setProfile] = useState<StaffProfile | null>(null)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [loginError, setLoginError] = useState<string | null>(null)
+  const [loggingIn, setLoggingIn] = useState(false)
+
+  const [cfg, setCfg] = useState<StickersConfig>(() =>
+    typeof window !== 'undefined'
+      ? loadStickersConfig()
+      : { tableCount: 30, clients: [] }
+  )
+  const [newClientName, setNewClientName] = useState('')
+  const [addError, setAddError] = useState<string | null>(null)
+
   const [items, setItems] = useState<QrItem[]>([])
   const [loading, setLoading] = useState(true)
+
   const base = useMemo(
     () =>
       typeof window !== 'undefined'
@@ -18,21 +62,81 @@ export default function QrPrintPage() {
     []
   )
 
+  const persist = useCallback((next: StickersConfig) => {
+    saveStickersConfig(next)
+    setCfg(next)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      if (isDemoAuth()) {
+        const demo = getDemoProfile()
+        if (!cancelled) {
+          setProfile(demo)
+          setAuthLoading(false)
+        }
+        return
+      }
+      const session = await getSession()
+      if (!session) {
+        if (!cancelled) {
+          setProfile(null)
+          setAuthLoading(false)
+        }
+        return
+      }
+      const p = await fetchStaffProfile(session.user)
+      if (!cancelled) {
+        setProfile(p)
+        setAuthLoading(false)
+      }
+      if (p) void ensureStaffSession(p)
+    })()
+    const unsub = onAuthChange(async (session) => {
+      if (!session) {
+        setProfile(null)
+        return
+      }
+      const p = await fetchStaffProfile(session.user)
+      setProfile(p)
+    })
+    return () => {
+      cancelled = true
+      unsub()
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
       setLoading(true)
       const next: QrItem[] = []
-      const n = Math.min(Math.max(1, count), 100)
+      const n = Math.min(Math.max(1, cfg.tableCount), 100)
       for (let table = 1; table <= n; table++) {
         const url = orderUrlForTable(table, base)
         const dataUrl = await QRCode.toDataURL(url, {
           width: 280,
           margin: 1,
           errorCorrectionLevel: 'M',
-          color: { dark: '#2a211c', light: '#ffffff' },
+          color: { dark: '#332d29', light: '#ffffff' },
         })
-        next.push({ table, url, dataUrl })
+        next.push({ kind: 'table', table, dataUrl })
+      }
+      for (const client of cfg.clients) {
+        const url = orderUrlForClient(client.name, base)
+        const dataUrl = await QRCode.toDataURL(url, {
+          width: 280,
+          margin: 1,
+          errorCorrectionLevel: 'M',
+          color: { dark: '#332d29', light: '#fff8ef' },
+        })
+        next.push({
+          kind: 'client',
+          id: client.id,
+          name: client.name,
+          dataUrl,
+        })
       }
       if (!cancelled) {
         setItems(next)
@@ -42,16 +146,124 @@ export default function QrPrintPage() {
     return () => {
       cancelled = true
     }
-  }, [count, base])
+  }, [cfg.tableCount, cfg.clients, base])
+
+  const handleLogin = async (e: FormEvent) => {
+    e.preventDefault()
+    setLoggingIn(true)
+    setLoginError(null)
+    const { error } = await signInWithUsername(username, password)
+    if (error) {
+      setLoginError(error)
+      setLoggingIn(false)
+      return
+    }
+    if (isDemoAuth()) {
+      setProfile(getDemoProfile())
+    } else {
+      const session = await getSession()
+      if (session) {
+        const p = await fetchStaffProfile(session.user)
+        setProfile(p)
+      }
+    }
+    setLoggingIn(false)
+  }
+
+  const handleAddClient = (e: FormEvent) => {
+    e.preventDefault()
+    setAddError(null)
+    const name = sanitizeClientName(newClientName)
+    if (!name) {
+      setAddError('Emër i pavlefshëm (2–48 shkronja).')
+      return
+    }
+    const exists = cfg.clients.some(
+      (c) => c.name.toLowerCase() === name.toLowerCase()
+    )
+    if (exists) {
+      setAddError('Ky klient ekziston tashmë.')
+      return
+    }
+    const sticker: ClientSticker = {
+      id: crypto.randomUUID(),
+      name,
+      createdAt: new Date().toISOString(),
+    }
+    persist({ ...cfg, clients: [...cfg.clients, sticker] })
+    setNewClientName('')
+  }
+
+  const removeClient = (id: string) => {
+    persist({
+      ...cfg,
+      clients: cfg.clients.filter((c) => c.id !== id),
+    })
+  }
+
+  if (authLoading) {
+    return (
+      <div className="qr-print-page">
+        <p className="qr-loading">{sq.loading}</p>
+      </div>
+    )
+  }
+
+  if (!profile) {
+    return (
+      <div className="dashboard-pin-page qr-login-gate">
+        <form className="pin-card" onSubmit={(e) => void handleLogin(e)}>
+          <h1>Ngjitëset QR</h1>
+          <p>Vetëm pronari (admin). Hyni për të menaxhuar dhe printuar.</p>
+          <input
+            className="pin-input"
+            style={{ letterSpacing: 'normal', fontSize: '1rem' }}
+            autoComplete="username"
+            placeholder={sq.usernamePlaceholder}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+          <input
+            className="pin-input"
+            style={{ letterSpacing: 'normal', fontSize: '1rem' }}
+            type="password"
+            autoComplete="current-password"
+            placeholder={sq.password}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          {loginError && <p className="form-error">{loginError}</p>}
+          <button
+            type="submit"
+            className="btn btn-primary btn-block"
+            disabled={loggingIn}
+          >
+            {loggingIn ? sq.signingIn : sq.signIn}
+          </button>
+          <Link to="/dashboard" className="btn btn-secondary btn-block">
+            {sq.liveBoard}
+          </Link>
+        </form>
+      </div>
+    )
+  }
+
+  if (!isAdminRole(profile.role)) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  const tables = items.filter((i): i is TableQr => i.kind === 'table')
+  const clients = items.filter((i): i is ClientQr => i.kind === 'client')
 
   return (
     <div className="qr-print-page">
       <header className="qr-toolbar no-print">
         <div>
-          <h1>Kodet QR — tavolinat</h1>
+          <h1>Ngjitëset QR</h1>
           <p>
-            {SHOP_NAME} · printoni dhe vendosini në tavolina. Nuk duhet database
-            për tavolina — mjafton numri në link.
+            {SHOP_NAME} · printoni për tavolina dhe klientë të besuar (zyra).
+            Linku nuk del në ngjitëse. Min. porosi klient: €
+            {CLIENT_MIN_ORDER_EUR.toFixed(0)}.
           </p>
         </div>
         <div className="qr-toolbar-actions">
@@ -61,8 +273,13 @@ export default function QrPrintPage() {
               type="number"
               min={1}
               max={100}
-              value={count}
-              onChange={(e) => setCount(Number(e.target.value) || 1)}
+              value={cfg.tableCount}
+              onChange={(e) =>
+                persist({
+                  ...cfg,
+                  tableCount: Number(e.target.value) || 1,
+                })
+              }
             />
           </label>
           <button
@@ -75,23 +292,102 @@ export default function QrPrintPage() {
           <Link to="/dashboard" className="btn btn-secondary">
             Paneli
           </Link>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void signOut()}
+          >
+            {sq.signOut}
+          </button>
         </div>
       </header>
+
+      <section className="qr-admin-panel no-print">
+        <h2>Klientë / zyra (ngjitëse speciale)</h2>
+        <p className="qr-admin-hint">
+          Shtoni emrin e klientit besnik. Ata skanojnë dhe porosisin me min. €
+          {CLIENT_MIN_ORDER_EUR.toFixed(0)}. Në shank / kamerier del si{' '}
+          <strong>ZYRË</strong>, jo si tavolinë.
+        </p>
+        <form className="qr-add-client" onSubmit={handleAddClient}>
+          <input
+            type="text"
+            maxLength={48}
+            placeholder="Emri i klientit / zyrës"
+            value={newClientName}
+            onChange={(e) => setNewClientName(e.target.value)}
+          />
+          <button type="submit" className="btn btn-primary">
+            Shto ngjitëse
+          </button>
+        </form>
+        {addError && <p className="form-error">{addError}</p>}
+        {cfg.clients.length > 0 && (
+          <ul className="qr-client-list">
+            {cfg.clients.map((c) => (
+              <li key={c.id}>
+                <span>{c.name}</span>
+                <button
+                  type="button"
+                  className="btn-ghost-inline"
+                  onClick={() => removeClient(c.id)}
+                >
+                  Hiq
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {loading ? (
         <p className="qr-loading">Duke gjeneruar kodet…</p>
       ) : (
-        <div className="qr-grid">
-          {items.map((item) => (
-            <article key={item.table} className="qr-card">
-              <p className="qr-shop">{SHOP_NAME}</p>
-              <h2 className="qr-table">Tavolina {item.table}</h2>
-              <img src={item.dataUrl} alt={`QR tavolina ${item.table}`} />
-              <p className="qr-hint">Skanoni për të porositur</p>
-              <p className="qr-url">{item.url}</p>
-            </article>
-          ))}
-        </div>
+        <>
+          {tables.length > 0 && (
+            <section className="qr-section">
+              <h2 className="qr-section-title no-print">Tavolinat</h2>
+              <div className="qr-grid">
+                {tables.map((item) => (
+                  <article key={item.table} className="qr-card">
+                    <p className="qr-shop">{SHOP_NAME}</p>
+                    <h2 className="qr-table">Tavolina {item.table}</h2>
+                    <img
+                      src={item.dataUrl}
+                      alt={`QR tavolina ${item.table}`}
+                    />
+                    <p className="qr-hint">Skanoni për të porositur</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {clients.length > 0 && (
+            <section className="qr-section">
+              <h2 className="qr-section-title no-print">
+                Klientë / zyra ({clients.length})
+              </h2>
+              <div className="qr-grid">
+                {clients.map((item) => (
+                  <article
+                    key={item.id}
+                    className="qr-card qr-card-client"
+                  >
+                    <p className="qr-shop">{SHOP_NAME}</p>
+                    <p className="qr-client-badge">ZYRË · KLIENT</p>
+                    <h2 className="qr-table qr-client-name">{item.name}</h2>
+                    <img
+                      src={item.dataUrl}
+                      alt={`QR klient ${item.name}`}
+                    />
+                    <p className="qr-hint">Porosi për zyrë · min. €{CLIENT_MIN_ORDER_EUR}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
     </div>
   )

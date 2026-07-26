@@ -15,6 +15,15 @@ export const sq = {
   sending: 'Duke dërguar…',
   orderSent: 'Porosia u dërgua!',
   bringToTable: (_n?: number) => `Do t’jua sjellim së shpejti.`,
+  bringToOffice: (name: string) =>
+    `Do t’jua dërgojmë te ${name} (zyrë / klient).`,
+  officeOrder: 'Porosi zyre',
+  officeBadge: 'ZYRË',
+  clientMinOrder: (min: number) =>
+    `Porosia minimale për klient është €${min.toFixed(2)}`,
+  clientMinOrderNeed: (min: number, need: number) =>
+    `Min. €${min.toFixed(0)} për klientë — mungojnë ${need.toFixed(2)} €`,
+  stickersTab: 'Ngjitëset QR',
   orderAgain: 'Porosit përsëri',
   homeTitle: 'Porosi nga tavolina',
   homeScanQr: 'Skanoni kodin QR në tavolinën tuaj për të porositur.',

@@ -66,6 +66,10 @@ import CancelOrderModal from '../components/CancelOrderModal'
 import { menu } from '../data/menu'
 import { TABLE_COUNT } from '../data/config'
 import {
+  isClientOrder,
+  orderDestinationLabel,
+} from '../data/stickers'
+import {
   formatEuro,
   formatRelativeTime,
   formatTime,
@@ -236,6 +240,7 @@ function OrderCard({
     <article
       className={[
         'order-card',
+        isClientOrder(order) ? 'is-client-order' : '',
         variant === 'pending' ? '' : 'is-done',
         variant === 'cancelled' ? 'is-cancelled' : '',
         variant === 'archive' ? 'is-archive' : '',
@@ -251,8 +256,13 @@ function OrderCard({
     >
       <div className="order-card-top">
         <div>
+          {isClientOrder(order) && (
+            <span className="client-order-badge">{sq.officeBadge}</span>
+          )}
           <h2 className="order-card-table">
-            {sq.table} {order.table_number}
+            {isClientOrder(order)
+              ? orderDestinationLabel(order)
+              : `${sq.table} ${order.table_number}`}
           </h2>
           {(variant === 'pending' || variant === 'bill') && (
             <span className={`wait-badge wait-${priority}`}>
@@ -1314,7 +1324,7 @@ export default function DashboardPage() {
   // Keep pay modal bill in sync after partial payments (don't close)
   useEffect(() => {
     if (!payBill) return
-    const next = tableBills.find((b) => b.table === payBill.table)
+    const next = tableBills.find((b) => b.key === payBill.key)
     if (!next) {
       setPayBill(null)
       return
@@ -1593,7 +1603,7 @@ export default function DashboardPage() {
                     <div className="order-grid">
                       {tableBills.map((bill) => (
                         <TableBillCard
-                          key={bill.table}
+                          key={bill.key}
                           bill={bill}
                           onPay={() => setPayBill(bill)}
                         />
@@ -1706,7 +1716,7 @@ export default function DashboardPage() {
                     <div className="order-grid">
                       {tableBillsReady.map((bill) => (
                         <TableBillCard
-                          key={`pay-${bill.table}`}
+                          key={`pay-${bill.key}`}
                           bill={bill}
                           onPay={() => setPayBill(bill)}
                         />
@@ -2121,7 +2131,7 @@ export default function DashboardPage() {
                               }
                             >
                               <span>
-                                {sq.table} {order.table_number} ·{' '}
+                                {orderDestinationLabel(order)} ·{' '}
                                 {order.status === 'done'
                                   ? sq.finished
                                   : sq.cancelled}
@@ -2335,15 +2345,27 @@ export default function DashboardPage() {
         )}
 
         {tab === 'settings' && isAdmin && (
-          <AdminWipePanel
-            onWiped={() => {
-              setOrders([])
-              setArchive([])
-              setSalesOrders([])
-              setSessions([])
-              void loadOrders()
-            }}
-          />
+          <>
+            <section className="dashboard-section">
+              <h2 className="section-label">{sq.stickersTab}</h2>
+              <p className="archive-lead">
+                Printoni ngjitëse tavolinash dhe klientësh (zyra). Faqja është
+                e mbrojtur — vetëm admin.
+              </p>
+              <a className="btn btn-primary" href="/qr">
+                {sq.stickersTab}
+              </a>
+            </section>
+            <AdminWipePanel
+              onWiped={() => {
+                setOrders([])
+                setArchive([])
+                setSalesOrders([])
+                setSessions([])
+                void loadOrders()
+              }}
+            />
+          </>
         )}
       </main>
 
@@ -2397,6 +2419,7 @@ function TableBillCard({
     <article
       className={[
         'order-card is-bill',
+        bill.clientName ? 'is-client-order' : '',
         bill.allReady ? 'is-ready' : '',
         bill.hasPending ? 'is-mixed' : '',
       ]
@@ -2405,8 +2428,13 @@ function TableBillCard({
     >
       <div className="order-card-top">
         <div>
+          {bill.clientName && (
+            <span className="client-order-badge">{sq.officeBadge}</span>
+          )}
           <h2 className="order-card-table">
-            {sq.table} {bill.table}
+            {bill.clientName
+              ? bill.clientName
+              : `${sq.table} ${bill.table}`}
           </h2>
           <span
             className={`wait-badge ${bill.allReady ? 'wait-warm' : 'wait-hot'}`}

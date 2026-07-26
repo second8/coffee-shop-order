@@ -1,5 +1,11 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { menu } from '../data/menu'
+import {
+  CLIENT_MIN_ORDER_EUR,
+  CLIENT_TABLE_SENTINEL,
+  orderDestinationKey,
+  sanitizeClientName,
+} from '../data/stickers'
 import type {
   CartItem,
   Order,
@@ -149,34 +155,117 @@ export function cartTotal(items: CartItem[]): number {
 
 export function sanitizeOrderInput(
   tableNumber: number,
+  items: CartItem[],
+  clientName?: string | null
+): {
   items: CartItem[]
-): { items: CartItem[]; total: number; error: string | null } {
-  if (!Number.isInteger(tableNumber) || tableNumber < 1 || tableNumber > MAX_TABLE) {
-    return { items: [], total: 0, error: 'Numri i tavolinës është i pavlefshëm' }
+  total: number
+  clientName: string | null
+  tableNumber: number
+  error: string | null
+} {
+  const cleanClient = clientName ? sanitizeClientName(clientName) : null
+  if (clientName && !cleanClient) {
+    return {
+      items: [],
+      total: 0,
+      clientName: null,
+      tableNumber: 0,
+      error: 'Emri i klientit është i pavlefshëm',
+    }
   }
+
+  if (cleanClient) {
+    // Office / loyal client sticker
+    if (
+      !Number.isInteger(tableNumber) ||
+      (tableNumber !== CLIENT_TABLE_SENTINEL &&
+        (tableNumber < 1 || tableNumber > MAX_TABLE))
+    ) {
+      // force sentinel for clients
+    }
+  } else if (
+    !Number.isInteger(tableNumber) ||
+    tableNumber < 1 ||
+    tableNumber > MAX_TABLE
+  ) {
+    return {
+      items: [],
+      total: 0,
+      clientName: null,
+      tableNumber: 0,
+      error: 'Numri i tavolinës është i pavlefshëm',
+    }
+  }
+
   if (!Array.isArray(items) || items.length === 0) {
-    return { items: [], total: 0, error: 'Porosia është bosh' }
+    return {
+      items: [],
+      total: 0,
+      clientName: cleanClient,
+      tableNumber: cleanClient ? CLIENT_TABLE_SENTINEL : tableNumber,
+      error: 'Porosia është bosh',
+    }
   }
   if (items.length > MAX_LINES) {
-    return { items: [], total: 0, error: 'Shumë artikuj në një porosi' }
+    return {
+      items: [],
+      total: 0,
+      clientName: cleanClient,
+      tableNumber: cleanClient ? CLIENT_TABLE_SENTINEL : tableNumber,
+      error: 'Shumë artikuj në një porosi',
+    }
   }
   const cleaned: CartItem[] = []
   for (const raw of items) {
     if (!raw || typeof raw.name !== 'string') {
-      return { items: [], total: 0, error: 'Artikull i pavlefshëm' }
+      return {
+        items: [],
+        total: 0,
+        clientName: cleanClient,
+        tableNumber: cleanClient ? CLIENT_TABLE_SENTINEL : tableNumber,
+        error: 'Artikull i pavlefshëm',
+      }
     }
     const price = menuPriceByName.get(raw.name)
     if (price === undefined) {
-      return { items: [], total: 0, error: `Artikull i panjohur: ${raw.name}` }
+      return {
+        items: [],
+        total: 0,
+        clientName: cleanClient,
+        tableNumber: cleanClient ? CLIENT_TABLE_SENTINEL : tableNumber,
+        error: `Artikull i panjohur: ${raw.name}`,
+      }
     }
     const quantity = Math.floor(Number(raw.quantity))
     if (!Number.isFinite(quantity) || quantity < 1 || quantity > MAX_QTY_PER_ITEM) {
-      return { items: [], total: 0, error: `Sasi e pavlefshme për ${raw.name}` }
+      return {
+        items: [],
+        total: 0,
+        clientName: cleanClient,
+        tableNumber: cleanClient ? CLIENT_TABLE_SENTINEL : tableNumber,
+        error: `Sasi e pavlefshme për ${raw.name}`,
+      }
     }
     cleaned.push({ name: raw.name, price, quantity })
   }
   const total = cleaned.reduce((sum, i) => sum + i.price * i.quantity, 0)
-  return { items: cleaned, total, error: null }
+  if (cleanClient && total < CLIENT_MIN_ORDER_EUR) {
+    return {
+      items: cleaned,
+      total,
+      clientName: cleanClient,
+      tableNumber: CLIENT_TABLE_SENTINEL,
+      error: `Porosia minimale për klient është €${CLIENT_MIN_ORDER_EUR.toFixed(2)}`,
+    }
+  }
+  return {
+    items: cleaned,
+    total,
+    clientName: cleanClient,
+    tableNumber: cleanClient ? CLIENT_TABLE_SENTINEL : tableNumber,
+    error: null,
+  }
 }
 
 export function subscribeDemoOrders(onChange: () => void): () => void {
@@ -205,13 +294,16 @@ export type CreateOrderOptions = {
    * Kamerier groups open tickets by table until "Paguaj".
    */
   mode?: 'customer' | 'staff'
+  /** Named client / office sticker */
+  clientName?: string | null
 }
 
 function buildOrderRow(
   tableNumber: number,
   items: CartItem[],
   total: number,
-  note: string | null
+  note: string | null,
+  clientName?: string | null
 ): Record<string, unknown> {
   const row: Record<string, unknown> = {
     table_number: tableNumber,
@@ -220,6 +312,7 @@ function buildOrderRow(
     status: 'pending',
   }
   if (note) row.note = note
+  if (clientName) row.client_name = clientName
   return row
 }
 
@@ -263,6 +356,27 @@ async function insertOrderDirect(
     error = retry.error
   }
 
+  // Schema without client_name yet — still insert; name is lost until migration
+  if (error && String(error.message).toLowerCase().includes('client_name')) {
+    const { client_name: _c, ...withoutClient } = row
+    void _c
+    const retry = await supabase
+      .from('orders')
+      .insert(withoutClient)
+      .select(cols)
+      .single()
+    if (!retry.error && retry.data) {
+      return {
+        data: {
+          ...(retry.data as unknown as Order),
+          client_name: (row.client_name as string) || null,
+        },
+        error: null,
+      }
+    }
+    error = retry.error
+  }
+
   if (error) return { data: null, error: error.message }
   return { data: data as unknown as Order, error: null }
 }
@@ -274,15 +388,21 @@ export async function createOrder(
   note?: string | null,
   options?: CreateOrderOptions
 ): Promise<{ data: Order | null; error: string | null }> {
-  const sanitized = sanitizeOrderInput(tableNumber, items)
+  const sanitized = sanitizeOrderInput(
+    tableNumber,
+    items,
+    options?.clientName
+  )
   if (sanitized.error) return { data: null, error: sanitized.error }
   const cleanNote = sanitizeNote(note)
   const mode = options?.mode ?? 'customer'
+  const destTable = sanitized.tableNumber
+  const destClient = sanitized.clientName
 
   if (!supabase) {
     const order: Order = {
       id: crypto.randomUUID(),
-      table_number: tableNumber,
+      table_number: destTable,
       items: sanitized.items,
       total: sanitized.total,
       status: 'pending',
@@ -291,16 +411,18 @@ export async function createOrder(
       completed_by: null,
       archived_at: null,
       note: cleanNote,
+      client_name: destClient,
     }
     writeDemoOrders([order, ...readDemoOrders()])
     return { data: order, error: null }
   }
 
   const row = buildOrderRow(
-    tableNumber,
+    destTable,
     sanitized.items,
     sanitized.total,
-    cleanNote
+    cleanNote,
+    destClient
   )
 
   // Staff / manual: always a new kitchen ticket (kamerier groups by table)
@@ -314,9 +436,10 @@ export async function createOrder(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        table_number: tableNumber,
+        table_number: destTable,
         items: sanitized.items,
         note: cleanNote,
+        client_name: destClient,
       }),
     })
     if (apiRes.ok) {
@@ -399,14 +522,29 @@ export async function detectPaidSupport(): Promise<boolean> {
   return schemaSupportsPaid
 }
 
+let schemaSupportsClientName: boolean | null = null
+
+export async function detectClientNameSupport(): Promise<boolean> {
+  if (schemaSupportsClientName !== null) return schemaSupportsClientName
+  if (!supabase) {
+    schemaSupportsClientName = true
+    return true
+  }
+  const { error } = await supabase.from('orders').select('client_name').limit(1)
+  schemaSupportsClientName = !error
+  return schemaSupportsClientName
+}
+
 async function orderSelectCols(): Promise<string> {
   const hasArchive = await detectArchiveSupport()
   const hasNote = await detectNoteSupport()
   const hasPaid = await detectPaidSupport()
+  const hasClient = await detectClientNameSupport()
   let cols = ORDER_SELECT_BASE
   if (hasArchive) cols += ',archived_at'
   if (hasNote) cols += ',note'
   if (hasPaid) cols += ',paid_at,paid_by,payment_events,cancel_reason'
+  if (hasClient) cols += ',client_name'
   return cols
 }
 
@@ -683,9 +821,13 @@ export async function markPartialPay(
   }
 }
 
-/** One open invoice per table for kamerier (many kitchen tickets summed). */
+/** One open invoice per destination for kamerier (table or named client). */
 export type TableBill = {
+  /** Unique dest key: t:3 or c:acme */
+  key: string
   table: number
+  /** Named client / office sticker (null for tables) */
+  clientName: string | null
   /** Newest first — rounds / kitchen tickets */
   orders: Order[]
   /** Unpaid amount on READY (gati) tickets only — what kamerier can take now */
@@ -716,15 +858,16 @@ export function buildTableBills(
   orders: Order[],
   opts?: BuildTableBillsOpts
 ): TableBill[] {
-  const map = new Map<number, Order[]>()
+  const map = new Map<string, Order[]>()
   for (const o of orders) {
     if (!isOpenBill(o)) continue
-    const list = map.get(o.table_number) ?? []
+    const key = orderDestinationKey(o)
+    const list = map.get(key) ?? []
     list.push(o)
-    map.set(o.table_number, list)
+    map.set(key, list)
   }
   const bills: TableBill[] = []
-  for (const [table, list] of map) {
+  for (const [key, list] of map) {
     // Newest rounds on top
     list.sort(
       (a, b) =>
@@ -737,8 +880,14 @@ export function buildTableBills(
     const unpaid = ready.reduce((s, o) => s + unpaidTotal(o), 0)
     const pendingUnpaid = pending.reduce((s, o) => s + unpaidTotal(o), 0)
     const gross = list.reduce((s, o) => s + Number(o.total), 0)
+    const clientName = list[0]?.client_name?.trim() || null
+    const table = clientName
+      ? CLIENT_TABLE_SENTINEL
+      : list[0]?.table_number ?? 0
     bills.push({
+      key,
       table,
+      clientName,
       orders: list,
       unpaid,
       pendingUnpaid,
@@ -752,7 +901,7 @@ export function buildTableBills(
       newestAt: list[0]!.created_at,
     })
   }
-  // Tables with newest activity first
+  // Destinations with newest activity first
   return bills.sort(
     (a, b) =>
       new Date(b.newestAt).getTime() - new Date(a.newestAt).getTime()

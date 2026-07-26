@@ -14,18 +14,50 @@ for (const cat of menuJson.categories) {
   }
 }
 
+const CLIENT_MIN_ORDER = 5
+const CLIENT_TABLE = 0
+const MAX_TABLE = 100
+const MAX_CLIENT_NAME = 48
+
 type CartLine = { name: string; price: number; quantity: number }
+
+function sanitizeClientName(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const t = raw.trim().replace(/\s+/g, ' ')
+  if (t.length < 2 || t.length > MAX_CLIENT_NAME) return null
+  if (!/^[\p{L}\p{N}][\p{L}\p{N} .,&'\-/]*$/u.test(t)) return null
+  return t
+}
 
 function sanitize(
   tableNumber: unknown,
-  items: unknown
+  items: unknown,
+  clientNameRaw: unknown
 ):
-  | { ok: true; table: number; items: CartLine[]; total: number }
+  | {
+      ok: true
+      table: number
+      items: CartLine[]
+      total: number
+      clientName: string | null
+    }
   | { ok: false; error: string } {
-  const table = Number(tableNumber)
-  if (!Number.isInteger(table) || table < 1 || table > 100) {
-    return { ok: false, error: 'Numri i tavolinës është i pavlefshëm' }
+  const clientName = sanitizeClientName(clientNameRaw)
+
+  if (clientNameRaw != null && clientNameRaw !== '' && !clientName) {
+    return { ok: false, error: 'Emri i klientit është i pavlefshëm' }
   }
+
+  let table: number
+  if (clientName) {
+    table = CLIENT_TABLE
+  } else {
+    table = Number(tableNumber)
+    if (!Number.isInteger(table) || table < 1 || table > MAX_TABLE) {
+      return { ok: false, error: 'Numri i tavolinës është i pavlefshëm' }
+    }
+  }
+
   if (!Array.isArray(items) || items.length === 0 || items.length > 30) {
     return { ok: false, error: 'Porosia është e pavlefshme' }
   }
@@ -45,7 +77,13 @@ function sanitize(
     cleaned.push({ name: raw.name, price, quantity })
   }
   const total = cleaned.reduce((s, i) => s + i.price * i.quantity, 0)
-  return { ok: true, table, items: cleaned, total }
+  if (clientName && total < CLIENT_MIN_ORDER) {
+    return {
+      ok: false,
+      error: `Porosia minimale për klient është €${CLIENT_MIN_ORDER.toFixed(2)}`,
+    }
+  }
+  return { ok: true, table, items: cleaned, total, clientName }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -67,7 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body
-  const sanitized = sanitize(body?.table_number, body?.items)
+  const sanitized = sanitize(body?.table_number, body?.items, body?.client_name)
   if (!sanitized.ok) {
     res.status(400).json({ error: sanitized.error })
     return
@@ -90,14 +128,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     status: 'pending',
   }
   if (note) row.note = note
+  if (sanitized.clientName) row.client_name = sanitized.clientName
+
+  const selectFull =
+    'id,table_number,items,total,status,created_at,completed_at,completed_by,archived_at,note,paid_at,paid_by,client_name'
 
   let { data, error } = await supabase
     .from('orders')
     .insert(row)
-    .select(
-      'id,table_number,items,total,status,created_at,completed_at,completed_by,archived_at,note,paid_at,paid_by'
-    )
+    .select(selectFull)
     .single()
+
+  if (error && String(error.message).toLowerCase().includes('client_name')) {
+    const { client_name: _c, ...withoutClient } = row
+    void _c
+    const retry = await supabase
+      .from('orders')
+      .insert(withoutClient)
+      .select(
+        'id,table_number,items,total,status,created_at,completed_at,completed_by,archived_at,note,paid_at,paid_by'
+      )
+      .single()
+    data = retry.data
+      ? ({ ...retry.data, client_name: sanitized.clientName } as typeof data)
+      : retry.data
+    error = retry.error
+  }
 
   if (error && note && String(error.message).toLowerCase().includes('note')) {
     const retry = await supabase
@@ -107,6 +163,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         items: sanitized.items,
         total: sanitized.total,
         status: 'pending',
+        ...(sanitized.clientName ? { client_name: sanitized.clientName } : {}),
       })
       .select(
         'id,table_number,items,total,status,created_at,completed_at,completed_by'

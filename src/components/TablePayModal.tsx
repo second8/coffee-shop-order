@@ -195,7 +195,9 @@ export default function TablePayModal({
           <div>
             <p className="manual-sheet-kicker">{sq.payment}</p>
             <h2>
-              {sq.table} {bill.table}
+              {bill.clientName
+                ? `${sq.officeBadge} · ${bill.clientName}`
+                : `${sq.table} ${bill.table}`}
             </h2>
             <div className="pay-summary-bar pay-summary-4">
               <div>

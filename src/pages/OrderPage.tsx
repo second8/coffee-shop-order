@@ -1,6 +1,11 @@
 import { useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { menu, MENU_TITLE, SHOP_NAME } from '../data/menu'
+import {
+  CLIENT_MIN_ORDER_EUR,
+  CLIENT_TABLE_SENTINEL,
+  sanitizeClientName,
+} from '../data/stickers'
 import { useCart } from '../hooks/useCart'
 import { createOrder } from '../lib/orders'
 import { formatEuro } from '../utils/format'
@@ -12,9 +17,16 @@ type Screen = 'menu' | 'review' | 'confirmation'
 export default function OrderPage() {
   const [searchParams] = useSearchParams()
   const tableParam = searchParams.get('table')
+  const clientParam = searchParams.get('client')
+  const clientName = clientParam ? sanitizeClientName(clientParam) : null
   const tableNumber = tableParam ? Number.parseInt(tableParam, 10) : NaN
   const hasValidTable =
-    Number.isInteger(tableNumber) && tableNumber > 0 && tableNumber < 1000
+    !clientName &&
+    Number.isInteger(tableNumber) &&
+    tableNumber > 0 &&
+    tableNumber < 1000
+  const isClientDest = Boolean(clientName)
+  const hasValidDest = isClientDest || hasValidTable
 
   const cart = useCart()
   const [screen, setScreen] = useState<Screen>('menu')
@@ -28,17 +40,26 @@ export default function OrderPage() {
     note: string | null
   } | null>(null)
 
+  const belowMin =
+    isClientDest && cart.itemCount > 0 && cart.total < CLIENT_MIN_ORDER_EUR
+  const minRemaining = Math.max(0, CLIENT_MIN_ORDER_EUR - cart.total)
+
   const handleSubmit = async () => {
     if (cart.items.length === 0 || submitting || submitLock.current) return
+    if (belowMin) {
+      setSubmitError(sq.clientMinOrder(CLIENT_MIN_ORDER_EUR))
+      return
+    }
     submitLock.current = true
     setSubmitting(true)
     setSubmitError(null)
     try {
       const { error } = await createOrder(
-        tableNumber,
+        isClientDest ? CLIENT_TABLE_SENTINEL : tableNumber,
         cart.items,
         cart.total,
-        note
+        note,
+        isClientDest ? { clientName } : undefined
       )
       if (error) {
         setSubmitError(error || sq.orderFailed)
@@ -60,7 +81,7 @@ export default function OrderPage() {
     }
   }
 
-  if (!hasValidTable) {
+  if (!hasValidDest) {
     return (
       <div className="order-page order-error-page">
         <div className="order-error-card">
@@ -82,7 +103,11 @@ export default function OrderPage() {
             ✓
           </div>
           <h1>{sq.orderSent}</h1>
-          <p className="order-confirm-sub">{sq.bringToTable()}</p>
+          <p className="order-confirm-sub">
+            {isClientDest
+              ? sq.bringToOffice(clientName!)
+              : sq.bringToTable()}
+          </p>
           {lastOrder && (
             <div className="order-confirm-summary">
               {lastOrder.items.map((item) => (
@@ -123,7 +148,9 @@ export default function OrderPage() {
 
   if (screen === 'review') {
     return (
-      <div className="order-page order-review-page">
+      <div
+        className={`order-page order-review-page ${isClientDest ? 'is-client-dest' : ''}`}
+      >
         <header className="order-header">
           <button
             type="button"
@@ -133,6 +160,11 @@ export default function OrderPage() {
             {sq.backToMenu}
           </button>
           <h1 className="review-title">{sq.yourOrder}</h1>
+          {isClientDest && (
+            <p className="client-dest-banner">
+              {sq.officeOrder} · {clientName}
+            </p>
+          )}
         </header>
 
         <main className="review-main review-main-scroll">
@@ -201,11 +233,19 @@ export default function OrderPage() {
                   <span>{sq.total}</span>
                   <strong>{formatEuro(cart.total)}</strong>
                 </div>
+                {belowMin && (
+                  <p className="form-error client-min-hint">
+                    {sq.clientMinOrderNeed(
+                      CLIENT_MIN_ORDER_EUR,
+                      minRemaining
+                    )}
+                  </p>
+                )}
                 {submitError && <p className="form-error">{submitError}</p>}
                 <button
                   type="button"
                   className="btn btn-primary btn-block btn-lg"
-                  disabled={submitting}
+                  disabled={submitting || belowMin}
                   onClick={() => void handleSubmit()}
                 >
                   {submitting ? sq.sending : sq.placeOrder}
@@ -219,11 +259,18 @@ export default function OrderPage() {
   }
 
   return (
-    <div className={`order-page ${cart.itemCount > 0 ? 'has-cart-bar' : ''}`}>
+    <div
+      className={`order-page ${cart.itemCount > 0 ? 'has-cart-bar' : ''} ${isClientDest ? 'is-client-dest' : ''}`}
+    >
       <header className="order-header">
         <div className="order-brand-text">
           <p className="order-menu-kicker">{MENU_TITLE}</p>
           <h1 className="order-shop-name">{SHOP_NAME}</h1>
+          {isClientDest && (
+            <p className="client-dest-banner">
+              {sq.officeOrder} · {clientName}
+            </p>
+          )}
         </div>
       </header>
 
@@ -283,12 +330,15 @@ export default function OrderPage() {
       {cart.itemCount > 0 && (
         <button
           type="button"
-          className="cart-bar"
+          className={`cart-bar ${belowMin ? 'is-below-min' : ''}`}
           onClick={() => setScreen('review')}
         >
           <span className="cart-bar-count">
             {cart.itemCount}{' '}
             {cart.itemCount === 1 ? sq.itemOne : sq.items}
+            {belowMin
+              ? ` · min €${CLIENT_MIN_ORDER_EUR}`
+              : ''}
           </span>
           <span className="cart-bar-total">{formatEuro(cart.total)}</span>
           <span className="cart-bar-cta">{sq.viewOrder}</span>

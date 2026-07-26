@@ -61,7 +61,8 @@ export default function CancelOrderModal({
       >
         <h2>{sq.cancelOrderTitle}</h2>
         <p className="cancel-modal-sub">
-          {sq.table} {tableNumber} — {sq.cancelReasonHint}
+          {tableNumber > 0 ? `${sq.table} ${tableNumber}` : sq.officeBadge}{' '}
+          — {sq.cancelReasonHint}
         </p>
         <div className="cancel-chips">
           {CHIPS.map((c) => (
