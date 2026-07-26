@@ -1236,6 +1236,57 @@ export default function DashboardPage() {
     ? ordersByWorker(statsPool, speedWorkerId)
     : []
 
+  // Auto log-out after 1 hour without interaction
+  // MUST stay above any conditional return (Rules of Hooks)
+  useEffect(() => {
+    if (!profile) return
+    const IDLE_MS = 60 * 60 * 1000
+    let last = Date.now()
+    const bump = () => {
+      last = Date.now()
+    }
+    const events = [
+      'pointerdown',
+      'keydown',
+      'touchstart',
+      'scroll',
+    ] as const
+    for (const e of events) window.addEventListener(e, bump, { passive: true })
+    const id = window.setInterval(() => {
+      if (Date.now() - last >= IDLE_MS) {
+        void handleLogout()
+      }
+    }, 30_000)
+    return () => {
+      for (const e of events) window.removeEventListener(e, bump)
+      window.clearInterval(id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id])
+
+  // Keep pay modal bill in sync after partial payments (don't close)
+  useEffect(() => {
+    if (!payBill) return
+    const next = tableBills.find((b) => b.table === payBill.table)
+    if (!next) {
+      setPayBill(null)
+      return
+    }
+    if (
+      next.unpaid !== payBill.unpaid ||
+      next.ticketCount !== payBill.ticketCount ||
+      next.readyCount !== payBill.readyCount
+    ) {
+      setPayBill(next)
+    }
+  }, [tableBills, payBill])
+
+  const themeClass = isAdmin
+    ? 'theme-admin'
+    : isWaitress
+      ? 'theme-waitress'
+      : 'theme-barista'
+
   if (authLoading) {
     return (
       <div className="dashboard-pin-page">
@@ -1289,60 +1340,6 @@ export default function DashboardPage() {
       </div>
     )
   }
-
-  // Auto log-out after 1 hour without interaction
-  useEffect(() => {
-    if (!profile) return
-    const IDLE_MS = 60 * 60 * 1000
-    let last = Date.now()
-    const bump = () => {
-      last = Date.now()
-    }
-    const events = [
-      'pointerdown',
-      'keydown',
-      'touchstart',
-      'scroll',
-    ] as const
-    for (const e of events) window.addEventListener(e, bump, { passive: true })
-    const id = window.setInterval(() => {
-      if (Date.now() - last >= IDLE_MS) {
-        void handleLogout()
-      }
-    }, 30_000)
-    return () => {
-      for (const e of events) window.removeEventListener(e, bump)
-      window.clearInterval(id)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.id])
-
-  // Keep pay modal bill in sync after partial payments (don't close)
-  useEffect(() => {
-    if (!payBill) return
-    const next = tableBills.find((b) => b.table === payBill.table)
-    if (!next) {
-      // Table fully settled or no ready tickets left
-      if (payBill.unpaid > 0 || payBill.hasPending) {
-        // maybe only pending left — close collect UI
-      }
-      setPayBill(null)
-      return
-    }
-    if (
-      next.unpaid !== payBill.unpaid ||
-      next.ticketCount !== payBill.ticketCount ||
-      next.readyCount !== payBill.readyCount
-    ) {
-      setPayBill(next)
-    }
-  }, [tableBills, payBill])
-
-  const themeClass = isAdmin
-    ? 'theme-admin'
-    : isWaitress
-      ? 'theme-waitress'
-      : 'theme-barista'
 
   return (
     <div className={`dashboard-page ${themeClass}`}>
