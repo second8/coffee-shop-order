@@ -381,7 +381,7 @@ code {
 .menu-category {
   font-family: var(--font-serif);
   font-size: 1.7rem;
-  font-weight: 400;
+  font-weight: 700;
   letter-spacing: -0.02em;
   text-transform: none;
   color: #000;
@@ -389,6 +389,9 @@ code {
   padding: 0.25rem 0 0.45rem 0.55rem;
   border-bottom: 1px solid var(--line);
   border-left: 3px solid var(--highlight);
+  /* Instrument Serif is single-weight; slight stroke reads a touch bolder */
+  -webkit-text-stroke: 0.35px currentColor;
+  paint-order: stroke fill;
 }
 
 .menu-list {
