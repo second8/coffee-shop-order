@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-26  
 **Git tag:** `checkpoint-stable-v1`  
-**Commit:** `29aa8b1` (Login field: plain username placeholder only)  
+**Commit:** `c277839` (includes this CHECKPOINT.md + all stable app features)  
 **Live:** https://coffee-shop-order-olive.vercel.app/  
 **GitHub:** https://github.com/second8/coffee-shop-order  
 
