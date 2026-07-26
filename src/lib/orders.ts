@@ -119,15 +119,86 @@ export function sanitizeNote(raw: string | null | undefined): string | null {
   return t.slice(0, MAX_NOTE_LEN)
 }
 
+export type CreateOrderOptions = {
+  /**
+   * Staff dashboard / manual order: one direct insert (no API).
+   * Avoids double-insert when /api/create-order already wrote a row.
+   */
+  mode?: 'customer' | 'staff'
+}
+
+function buildOrderRow(
+  tableNumber: number,
+  items: CartItem[],
+  total: number,
+  note: string | null
+): Record<string, unknown> {
+  const row: Record<string, unknown> = {
+    table_number: tableNumber,
+    items,
+    total,
+    status: 'pending',
+  }
+  if (note) row.note = note
+  return row
+}
+
+async function insertOrderDirect(
+  row: Record<string, unknown>,
+  cleanNote: string | null
+): Promise<{ data: Order | null; error: string | null }> {
+  if (!supabase) return { data: null, error: 'Supabase not configured' }
+
+  let { data, error } = await supabase
+    .from('orders')
+    .insert(row)
+    .select(
+      'id,table_number,items,total,status,created_at,completed_at,completed_by,archived_at,note'
+    )
+    .single()
+
+  // Retry without note / optional columns if schema lag
+  if (error && cleanNote && error.message.toLowerCase().includes('note')) {
+    const { note: _n, ...withoutNote } = row
+    void _n
+    const retry = await supabase
+      .from('orders')
+      .insert(withoutNote)
+      .select(
+        'id,table_number,items,total,status,created_at,completed_at,completed_by'
+      )
+      .single()
+    data = retry.data as typeof data
+    error = retry.error
+  }
+
+  if (error && error.message.toLowerCase().includes('archived_at')) {
+    const retry = await supabase
+      .from('orders')
+      .insert(row)
+      .select('id,table_number,items,total,status,created_at,completed_at,completed_by')
+      .single()
+    if (!retry.error && retry.data) {
+      return { data: retry.data as unknown as Order, error: null }
+    }
+    error = retry.error
+  }
+
+  if (error) return { data: null, error: error.message }
+  return { data: data as unknown as Order, error: null }
+}
+
 export async function createOrder(
   tableNumber: number,
   items: CartItem[],
   _total: number,
-  note?: string | null
+  note?: string | null,
+  options?: CreateOrderOptions
 ): Promise<{ data: Order | null; error: string | null }> {
   const sanitized = sanitizeOrderInput(tableNumber, items)
   if (sanitized.error) return { data: null, error: sanitized.error }
   const cleanNote = sanitizeNote(note)
+  const mode = options?.mode ?? 'customer'
 
   if (!supabase) {
     const order: Order = {
@@ -146,6 +217,19 @@ export async function createOrder(
     return { data: order, error: null }
   }
 
+  const row = buildOrderRow(
+    tableNumber,
+    sanitized.items,
+    sanitized.total,
+    cleanNote
+  )
+
+  // Staff / manual: single path only (no API) so we never write twice
+  if (mode === 'staff') {
+    return insertOrderDirect(row, cleanNote)
+  }
+
+  // Customer: try serverless API once. If it succeeds, do NOT insert again.
   try {
     const apiRes = await fetch('/api/create-order', {
       method: 'POST',
@@ -159,31 +243,7 @@ export async function createOrder(
     if (apiRes.ok) {
       const body = (await apiRes.json()) as { data?: Order }
       if (body.data) return { data: body.data, error: null }
-    }
-  } catch {
-    // fall through
-  }
-
-  const row: Record<string, unknown> = {
-    table_number: tableNumber,
-    items: sanitized.items,
-    total: sanitized.total,
-    status: 'pending',
-  }
-  if (cleanNote) row.note = cleanNote
-
-  const { error } = await supabase.from('orders').insert(row)
-
-  if (error) {
-    // Retry without note if column missing
-    if (cleanNote && error.message.toLowerCase().includes('note')) {
-      const { error: e2 } = await supabase.from('orders').insert({
-        table_number: tableNumber,
-        items: sanitized.items,
-        total: sanitized.total,
-        status: 'pending',
-      })
-      if (e2) return { data: null, error: e2.message }
+      // Created on server but body missing — still do not double-insert
       return {
         data: {
           id: crypto.randomUUID(),
@@ -192,29 +252,27 @@ export async function createOrder(
           total: sanitized.total,
           status: 'pending',
           created_at: new Date().toISOString(),
-          note: null,
+          note: cleanNote,
         },
         error: null,
       }
     }
-    return { data: null, error: error.message }
+    // 4xx from API = validation; don't fall through (would create second row on 5xx race)
+    if (apiRes.status >= 400 && apiRes.status < 500 && apiRes.status !== 404) {
+      let msg = 'Porosia dështoi'
+      try {
+        const body = (await apiRes.json()) as { error?: string }
+        if (body.error) msg = body.error
+      } catch {
+        // ignore
+      }
+      return { data: null, error: msg }
+    }
+  } catch {
+    // Network / no API route (local dev) → direct insert once
   }
 
-  return {
-    data: {
-      id: crypto.randomUUID(),
-      table_number: tableNumber,
-      items: sanitized.items,
-      total: sanitized.total,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-      completed_at: null,
-      completed_by: null,
-      archived_at: null,
-      note: cleanNote,
-    },
-    error: null,
-  }
+  return insertOrderDirect(row, cleanNote)
 }
 
 export async function fetchTodayOrders(): Promise<{

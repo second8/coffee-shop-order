@@ -370,6 +370,7 @@ function ManualOrderModal({
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [step, setStep] = useState<'table' | 'items'>('table')
 
   useEffect(() => {
     if (!open) {
@@ -377,6 +378,8 @@ function ManualOrderModal({
       setNote('')
       setErr(null)
       setTable(1)
+      setStep('table')
+      setSubmitting(false)
     }
   }, [open])
 
@@ -405,12 +408,16 @@ function ManualOrderModal({
   }
 
   const total = lines.reduce((s, i) => s + i.price * i.quantity, 0)
+  const itemCount = lines.reduce((s, i) => s + i.quantity, 0)
 
   const submit = async () => {
     if (lines.length === 0 || submitting) return
     setSubmitting(true)
     setErr(null)
-    const { data, error } = await createOrder(table, lines, total, note)
+    // Staff-only path: one DB insert (never API + client = 2 orders)
+    const { data, error } = await createOrder(table, lines, total, note, {
+      mode: 'staff',
+    })
     setSubmitting(false)
     if (error) {
       setErr(error)
@@ -421,104 +428,180 @@ function ManualOrderModal({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="manual-sheet-backdrop" role="presentation">
       <div
-        className="modal-card"
+        className="manual-sheet"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="manual-order-title"
-        onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-header">
-          <h2 id="manual-order-title">{sq.manualOrderTitle}</h2>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            {sq.close}
+        <header className="manual-sheet-header">
+          <div>
+            <p className="manual-sheet-kicker">{sq.manualOrder}</p>
+            <h2 id="manual-order-title">{sq.manualOrderTitle}</h2>
+          </div>
+          <button
+            type="button"
+            className="manual-close-btn"
+            onClick={onClose}
+            aria-label={sq.close}
+          >
+            ✕
+          </button>
+        </header>
+
+        <div className="manual-steps">
+          <button
+            type="button"
+            className={`manual-step ${step === 'table' ? 'is-active' : ''}`}
+            onClick={() => setStep('table')}
+          >
+            1. {sq.selectTable}
+          </button>
+          <button
+            type="button"
+            className={`manual-step ${step === 'items' ? 'is-active' : ''}`}
+            onClick={() => setStep('items')}
+          >
+            2. {sq.selectItems}
           </button>
         </div>
 
-        <label className="field-label" htmlFor="manual-table">
-          {sq.selectTable}
-        </label>
-        <select
-          id="manual-table"
-          className="text-input select-input"
-          value={table}
-          onChange={(e) => setTable(Number(e.target.value))}
-        >
-          {Array.from({ length: TABLE_COUNT }, (_, i) => i + 1).map((n) => (
-            <option key={n} value={n}>
-              {sq.table} {n}
-            </option>
-          ))}
-        </select>
-
-        <p className="field-label">{sq.selectItems}</p>
-        <div className="manual-menu">
-          {menu.categories.map((cat) => (
-            <div key={cat.name} className="manual-menu-cat">
-              <h3>{cat.name}</h3>
-              <ul>
-                {cat.items.map((item) => {
-                  const qty =
-                    lines.find((l) => l.name === item.name)?.quantity ?? 0
-                  return (
-                    <li key={item.name}>
-                      <span>
-                        {item.name}{' '}
-                        <em>{formatEuro(item.price)}</em>
-                      </span>
-                      <div className="qty-controls">
-                        <button
-                          type="button"
-                          className="qty-btn"
-                          onClick={() => decItem(item.name)}
-                          disabled={qty === 0}
-                        >
-                          −
-                        </button>
-                        <span className="qty-value">{qty}</span>
-                        <button
-                          type="button"
-                          className="qty-btn"
-                          onClick={() => addItem(item.name, item.price)}
-                        >
-                          +
-                        </button>
-                      </div>
-                    </li>
+        <div className="manual-sheet-body">
+          {step === 'table' && (
+            <div className="manual-table-step">
+              <p className="manual-help">
+                {sq.table} {table}
+              </p>
+              <div className="table-chip-grid">
+                {Array.from({ length: TABLE_COUNT }, (_, i) => i + 1).map(
+                  (n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      className={`table-chip ${table === n ? 'is-selected' : ''}`}
+                      onClick={() => {
+                        setTable(n)
+                        setStep('items')
+                      }}
+                    >
+                      {n}
+                    </button>
                   )
-                })}
-              </ul>
+                )}
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-block btn-lg manual-next-btn"
+                onClick={() => setStep('items')}
+              >
+                {sq.selectItems} →
+              </button>
             </div>
-          ))}
+          )}
+
+          {step === 'items' && (
+            <div className="manual-items-step">
+              <div className="manual-selected-table">
+                <span>
+                  {sq.table} <strong>{table}</strong>
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setStep('table')}
+                >
+                  Ndrysho
+                </button>
+              </div>
+
+              <div className="manual-menu">
+                {menu.categories.map((cat) => (
+                  <div key={cat.name} className="manual-menu-cat">
+                    <h3>{cat.name}</h3>
+                    <ul>
+                      {cat.items.map((item) => {
+                        const qty =
+                          lines.find((l) => l.name === item.name)?.quantity ??
+                          0
+                        return (
+                          <li
+                            key={item.name}
+                            className={qty > 0 ? 'is-picked' : ''}
+                          >
+                            <button
+                              type="button"
+                              className="manual-item-main"
+                              onClick={() => addItem(item.name, item.price)}
+                            >
+                              <span className="manual-item-name">
+                                {item.name}
+                              </span>
+                              <span className="manual-item-price">
+                                {formatEuro(item.price)}
+                              </span>
+                            </button>
+                            <div className="qty-controls qty-controls-lg">
+                              <button
+                                type="button"
+                                className="qty-btn qty-btn-lg"
+                                onClick={() => decItem(item.name)}
+                                disabled={qty === 0}
+                              >
+                                −
+                              </button>
+                              <span className="qty-value qty-value-lg">
+                                {qty}
+                              </span>
+                              <button
+                                type="button"
+                                className="qty-btn qty-btn-lg"
+                                onClick={() => addItem(item.name, item.price)}
+                              >
+                                +
+                              </button>
+                            </div>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+
+              <label className="field-label" htmlFor="manual-note">
+                {sq.orderNote}
+              </label>
+              <textarea
+                id="manual-note"
+                className="order-note-input"
+                rows={2}
+                maxLength={280}
+                placeholder={sq.orderNotePlaceholder}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </div>
+          )}
         </div>
 
-        <label className="field-label" htmlFor="manual-note">
-          {sq.orderNote}
-        </label>
-        <textarea
-          id="manual-note"
-          className="order-note-input"
-          rows={2}
-          maxLength={280}
-          placeholder={sq.orderNotePlaceholder}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-
-        <div className="manual-footer">
-          <strong>
-            {sq.total}: {formatEuro(total)}
-          </strong>
+        <footer className="manual-sheet-footer">
+          <div className="manual-footer-meta">
+            <span>
+              {itemCount} {itemCount === 1 ? sq.itemOne : sq.items}
+            </span>
+            <strong>{formatEuro(total)}</strong>
+          </div>
           {err && <p className="form-error">{err}</p>}
           <button
             type="button"
-            className="btn btn-primary btn-block"
-            disabled={lines.length === 0 || submitting}
+            className="btn btn-primary btn-block btn-lg manual-confirm-btn"
+            disabled={lines.length === 0 || submitting || step !== 'items'}
             onClick={() => void submit()}
           >
             {submitting ? sq.sending : sq.confirmManual}
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   )
@@ -868,12 +951,13 @@ export default function DashboardPage() {
   }
 
   const handleManualCreated = (order: Order) => {
+    // Mark known before state update so realtime INSERT does not double-play sound
+    knownIdsRef.current.add(order.id)
     setOrders((prev) => {
       if (prev.some((o) => o.id === order.id)) return prev
       return [order, ...prev]
     })
-    knownIdsRef.current.add(order.id)
-    if (soundEnabled) playNotificationSound()
+    // No sound for staff-entered orders (only customer/realtime new orders)
   }
 
   const activeOrders = useMemo(() => orders.filter(isActiveOrder), [orders])
@@ -1114,7 +1198,7 @@ export default function DashboardPage() {
             <div className="live-toolbar">
               <button
                 type="button"
-                className="btn btn-secondary btn-sm"
+                className="btn btn-primary manual-open-btn"
                 onClick={() => setManualOpen(true)}
               >
                 {sq.addManual}
@@ -1715,7 +1799,9 @@ export default function DashboardPage() {
                 </table>
               </div>
             )}
-            <p className="sales-footnote">{sq.migrationHint}</p>
+            {sessionHint && (
+              <p className="sales-footnote">{sessionHint}</p>
+            )}
           </section>
         )}
 

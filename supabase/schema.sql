@@ -32,22 +32,15 @@ CREATE TABLE IF NOT EXISTS staff_profiles (
 
 ALTER TABLE staff_profiles ENABLE ROW LEVEL SECURITY;
 
+-- Avoid recursive policies (subquery on staff_profiles inside staff_profiles RLS).
 DROP POLICY IF EXISTS "Staff can read own profile" ON staff_profiles;
-CREATE POLICY "Staff can read own profile"
-  ON staff_profiles FOR SELECT
-  TO authenticated
-  USING (auth.uid() = id);
-
 DROP POLICY IF EXISTS "Admins can read all profiles" ON staff_profiles;
-CREATE POLICY "Admins can read all profiles"
+DROP POLICY IF EXISTS "Staff can read profiles for names" ON staff_profiles;
+DROP POLICY IF EXISTS "Authenticated read staff profiles" ON staff_profiles;
+CREATE POLICY "Authenticated read staff profiles"
   ON staff_profiles FOR SELECT
   TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM staff_profiles sp
-      WHERE sp.id = auth.uid() AND sp.role = 'admin'
-    )
-  );
+  USING (true);
 
 -- 3. Orders RLS
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;

@@ -28,16 +28,12 @@ CREATE INDEX IF NOT EXISTS staff_sessions_user_idx ON staff_sessions (user_id, s
 
 ALTER TABLE staff_sessions ENABLE ROW LEVEL SECURITY;
 
+-- Session policies must NOT subquery staff_profiles (causes infinite RLS recursion).
 DROP POLICY IF EXISTS "Staff read own sessions" ON staff_sessions;
-CREATE POLICY "Staff read own sessions"
+DROP POLICY IF EXISTS "Staff read sessions" ON staff_sessions;
+CREATE POLICY "Staff read sessions"
   ON staff_sessions FOR SELECT TO authenticated
-  USING (
-    auth.uid() = user_id
-    OR EXISTS (
-      SELECT 1 FROM staff_profiles sp
-      WHERE sp.id = auth.uid() AND sp.role = 'admin'
-    )
-  );
+  USING (true);
 
 DROP POLICY IF EXISTS "Staff insert own sessions" ON staff_sessions;
 CREATE POLICY "Staff insert own sessions"
@@ -56,8 +52,11 @@ CREATE POLICY "Staff can delete orders"
   ON orders FOR DELETE TO authenticated
   USING (true);
 
--- 4) Allow staff to read profiles for "who completed" names
+-- 4) Profiles: drop recursive admin policy, allow authenticated read
+DROP POLICY IF EXISTS "Staff can read own profile" ON staff_profiles;
+DROP POLICY IF EXISTS "Admins can read all profiles" ON staff_profiles;
 DROP POLICY IF EXISTS "Staff can read profiles for names" ON staff_profiles;
-CREATE POLICY "Staff can read profiles for names"
+DROP POLICY IF EXISTS "Authenticated read staff profiles" ON staff_profiles;
+CREATE POLICY "Authenticated read staff profiles"
   ON staff_profiles FOR SELECT TO authenticated
   USING (true);

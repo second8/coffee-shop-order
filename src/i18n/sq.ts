@@ -118,8 +118,9 @@ export const sq = {
   loggedOut: 'Dalë',
   stillActive: 'Aktiv tani',
   noSessions:
-    'Nuk ka sesione ende. Sigurohu që MIGRATION_V2.sql është ekzekutuar dhe stafi ka hyrë përsëri.',
-  noWorkersListed: 'Nuk u gjetën profile stafi. Kontrollo staff_profiles në Supabase.',
+    'Nuk ka sesione ende. Stafi duhet të dalë dhe të hyjë përsëri. Nëse vazhdon: ekzekuto supabase/FIX_RLS_RECURSION.sql.',
+  noWorkersListed:
+    'Nuk u gjetën profile stafi. Ekzekuto supabase/FIX_RLS_RECURSION.sql në Supabase SQL Editor.',
   archiveEmpty: 'Arkiva është bosh.',
   archiveHint:
     'Këtu shkojnë porositë e arkivuara. Mund t’i ktheni, t’i fshini, ose fshihen vetë pas 7 ditësh.',
@@ -127,7 +128,7 @@ export const sq = {
   confirmDelete: 'Fshi përgjithmonë këtë porosi?',
   confirmCancel: 'Anulo këtë porosi?',
   migrationHint:
-    'Për anulo/arkivë/sesione/shënime: ekzekuto supabase/MIGRATION_V2.sql në Supabase SQL Editor.',
+    'Për anulo/arkivë/sesione/shënime/ekip: ekzekuto supabase/FIX_RLS_RECURSION.sql në Supabase SQL Editor.',
   unknownStaff: 'Staf',
   hour: 'Ora',
   count: 'Nr.',
