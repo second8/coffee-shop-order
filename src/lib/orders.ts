@@ -3,7 +3,9 @@ import { menu } from '../data/menu'
 import {
   CLIENT_MIN_ORDER_EUR,
   CLIENT_TABLE_SENTINEL,
+  clientMetaItemName,
   encodeClientInNote,
+  isClientMetaItem,
   normalizeOrderClientFields,
   orderDestinationKey,
   resolveClientName,
@@ -310,13 +312,21 @@ function buildOrderRow(
   note: string | null,
   clientName?: string | null
 ): Record<string, unknown> {
+  // Triple-write the client name so it survives missing columns / realtime gaps:
+  // 1) client_name column  2) human note "ZYRË: Name"  3) meta line in items jsonb
+  let lineItems = items.filter((i) => !isClientMetaItem(i.name))
+  if (clientName) {
+    lineItems = [
+      { name: clientMetaItemName(clientName), price: 0, quantity: 1 },
+      ...lineItems,
+    ]
+  }
   const row: Record<string, unknown> = {
     table_number: tableNumber,
-    items,
+    items: lineItems,
     total,
     status: 'pending',
   }
-  // Always embed client name in note so staff still see it if column missing
   const noteWithClient = clientName
     ? encodeClientInNote(clientName, note)
     : note
@@ -406,26 +416,6 @@ export async function createOrder(
   const destTable = sanitized.tableNumber
   const destClient = sanitized.clientName
 
-  if (!supabase) {
-    const order: Order = normalizeOrderClientFields({
-      id: crypto.randomUUID(),
-      table_number: destTable,
-      items: sanitized.items,
-      total: sanitized.total,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-      completed_at: null,
-      completed_by: null,
-      archived_at: null,
-      note: destClient
-        ? encodeClientInNote(destClient, cleanNote)
-        : cleanNote,
-      client_name: destClient,
-    })
-    writeDemoOrders([order, ...readDemoOrders()])
-    return { data: order, error: null }
-  }
-
   const row = buildOrderRow(
     destTable,
     sanitized.items,
@@ -433,6 +423,24 @@ export async function createOrder(
     cleanNote,
     destClient
   )
+
+  if (!supabase) {
+    const order = normalizeOrderClientFields({
+      id: crypto.randomUUID(),
+      table_number: Number(row.table_number),
+      items: row.items as CartItem[],
+      total: Number(row.total),
+      status: 'pending' as const,
+      created_at: new Date().toISOString(),
+      completed_at: null,
+      completed_by: null,
+      archived_at: null,
+      note: (row.note as string | undefined) ?? null,
+      client_name: (row.client_name as string | undefined) ?? null,
+    })
+    writeDemoOrders([order, ...readDemoOrders()])
+    return { data: order, error: null }
+  }
 
   // Staff / manual: always a new kitchen ticket (kamerier groups by table)
   if (mode === 'staff') {
@@ -453,7 +461,9 @@ export async function createOrder(
     })
     if (apiRes.ok) {
       const body = (await apiRes.json()) as { data?: Order }
-      if (body.data?.id) return { data: body.data, error: null }
+      if (body.data?.id) {
+        return { data: asOrder(body.data), error: null }
+      }
       // Never invent IDs — would desync with realtime / double cards
       return {
         data: null,

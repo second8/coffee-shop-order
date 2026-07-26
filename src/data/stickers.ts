@@ -30,10 +30,14 @@ export function slugifyClientName(name: string): string {
 }
 
 export function sanitizeClientName(raw: string): string | null {
-  const t = raw.trim().replace(/\s+/g, ' ')
+  // Keep permissive — Albanian letters, business names, etc.
+  const t = raw
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[\u0000-\u001F\u007F]/g, '')
   if (t.length < 2 || t.length > MAX_CLIENT_NAME_LEN) return null
-  // Letters, numbers, spaces, common punctuation for business names
-  if (!/^[\p{L}\p{N}][\p{L}\p{N} .,&'\-/]*$/u.test(t)) return null
+  // Reject only pure garbage (URLs, huge symbols)
+  if (/^https?:\/\//i.test(t)) return null
   return t
 }
 
@@ -109,31 +113,59 @@ export function saveStickersConfig(cfg: StickersConfig): void {
   )
 }
 
-/** Survives if `client_name` column is missing (pre-migration). */
-export const CLIENT_NOTE_TAG_RE = /^\[office:([^\]]{1,48})\]\s*/
+/**
+ * Survives if `client_name` column is missing (pre-migration).
+ * Human-readable so staff see the name even if parsing fails.
+ * Format: "ZYRË: Client Name" optionally followed by " · user note"
+ */
+export const CLIENT_NOTE_PREFIX_RE = /^ZYRË:\s*(.+?)(?:\s+·\s+([\s\S]*))?$/i
+export const CLIENT_NOTE_TAG_RE = /\[office:([^\]]{1,48})\]/i
 
 export function encodeClientInNote(
   clientName: string,
   note: string | null
 ): string {
-  const tag = `[office:${clientName}]`
-  return note ? `${tag} ${note}` : tag
+  const name = clientName.trim().replace(/\s+/g, ' ')
+  // Prefer plain human-readable form (visible on tickets)
+  if (note) return `ZYRË: ${name} · ${note}`
+  return `ZYRË: ${name}`
 }
 
 export function parseClientFromNote(
   note: string | null | undefined
 ): string | null {
   if (!note) return null
-  const m = note.match(CLIENT_NOTE_TAG_RE)
-  if (!m?.[1]) return null
-  return sanitizeClientName(m[1])
+  const plain = note.match(CLIENT_NOTE_PREFIX_RE)
+  if (plain?.[1]) {
+    const n = sanitizeClientName(plain[1])
+    if (n) return n
+    // Even if sanitize is picky, trust the captured label
+    const fallback = plain[1].trim().replace(/\s+/g, ' ').slice(0, MAX_CLIENT_NAME_LEN)
+    if (fallback.length >= 2) return fallback
+  }
+  const tag = note.match(CLIENT_NOTE_TAG_RE)
+  if (tag?.[1]) {
+    const n = sanitizeClientName(tag[1])
+    if (n) return n
+    const fallback = tag[1].trim().replace(/\s+/g, ' ').slice(0, MAX_CLIENT_NAME_LEN)
+    if (fallback.length >= 2) return fallback
+  }
+  return null
 }
 
 export function stripClientTagFromNote(
   note: string | null | undefined
 ): string | null {
   if (!note) return null
-  const stripped = note.replace(CLIENT_NOTE_TAG_RE, '').trim()
+  const plain = note.match(CLIENT_NOTE_PREFIX_RE)
+  if (plain) {
+    const rest = (plain[2] ?? '').trim()
+    return rest || null
+  }
+  const stripped = note
+    .replace(CLIENT_NOTE_TAG_RE, '')
+    .replace(/^ZYRË:\s*.+?(?:\s+·\s*)?/i, '')
+    .trim()
   return stripped || null
 }
 
@@ -142,10 +174,33 @@ export function resolveClientName(order: {
   client_name?: string | null
   note?: string | null
   table_number?: number
+  items?: { name?: string }[] | null
 }): string | null {
   const direct = order.client_name?.trim()
-  if (direct) return direct
-  return parseClientFromNote(order.note)
+  if (direct && direct.toLowerCase() !== 'zyrë / klient') return direct
+  const fromNote = parseClientFromNote(order.note)
+  if (fromNote) return fromNote
+  // Last resort: meta line baked into items (see encodeClientAsMetaItem)
+  const meta = order.items?.find((i) =>
+    typeof i?.name === 'string' && /^ZYRË:\s*.+/i.test(i.name)
+  )
+  if (meta?.name) {
+    const m = meta.name.match(/^ZYRË:\s*(.+)$/i)
+    if (m?.[1]) {
+      const n = m[1].trim().replace(/\s+/g, ' ').slice(0, MAX_CLIENT_NAME_LEN)
+      if (n.length >= 2) return n
+    }
+  }
+  return null
+}
+
+/** Meta cart line so name survives even if note + client_name columns fail. */
+export function clientMetaItemName(clientName: string): string {
+  return `ZYRË: ${clientName.trim().replace(/\s+/g, ' ').slice(0, MAX_CLIENT_NAME_LEN)}`
+}
+
+export function isClientMetaItem(name: string): boolean {
+  return /^ZYRË:\s*.+/i.test(name)
 }
 
 export function isClientOrder(order: {
@@ -181,23 +236,28 @@ export function orderDestinationKey(order: {
   return `t:${order.table_number}`
 }
 
-/** Hydrate client_name from note tag; hide tag from staff-facing note. */
+/** Hydrate client_name from note/meta; clean note + hide meta line from tickets. */
 export function normalizeOrderClientFields<
   T extends {
     client_name?: string | null
     note?: string | null
     table_number: number
+    items?: { name: string; price: number; quantity: number; paid_quantity?: number }[]
   },
 >(order: T): T {
   const name = resolveClientName(order)
-  if (!name) return order
+  const items = Array.isArray(order.items)
+    ? order.items.filter((i) => !isClientMetaItem(i.name))
+    : order.items
+  if (!name) {
+    if (items !== order.items) return { ...order, items }
+    return order
+  }
   return {
     ...order,
     client_name: name,
     note: stripClientTagFromNote(order.note),
-    table_number:
-      order.table_number === CLIENT_TABLE_SENTINEL
-        ? CLIENT_TABLE_SENTINEL
-        : order.table_number,
+    items,
+    table_number: CLIENT_TABLE_SENTINEL,
   }
 }

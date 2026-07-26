@@ -17,15 +17,27 @@ type Screen = 'menu' | 'review' | 'confirmation'
 export default function OrderPage() {
   const [searchParams] = useSearchParams()
   const tableParam = searchParams.get('table')
-  const clientParam = searchParams.get('client')
-  const clientName = clientParam ? sanitizeClientName(clientParam) : null
+  // Accept client / c / name query keys (QR uses ?client=)
+  const clientRaw =
+    searchParams.get('client') ||
+    searchParams.get('c') ||
+    searchParams.get('name')
+  const clientName = clientRaw ? sanitizeClientName(clientRaw) : null
+  // If sanitize rejected but raw looks like a name, still use a trimmed version
+  const clientNameLoose =
+    clientName ||
+    (clientRaw
+      ? clientRaw.trim().replace(/\s+/g, ' ').slice(0, 48) || null
+      : null)
+  const resolvedClient =
+    clientNameLoose && clientNameLoose.length >= 2 ? clientNameLoose : null
   const tableNumber = tableParam ? Number.parseInt(tableParam, 10) : NaN
   const hasValidTable =
-    !clientName &&
+    !resolvedClient &&
     Number.isInteger(tableNumber) &&
     tableNumber > 0 &&
     tableNumber < 1000
-  const isClientDest = Boolean(clientName)
+  const isClientDest = Boolean(resolvedClient)
   const hasValidDest = isClientDest || hasValidTable
 
   const cart = useCart()
@@ -59,7 +71,7 @@ export default function OrderPage() {
         cart.items,
         cart.total,
         note,
-        isClientDest ? { clientName } : undefined
+        isClientDest ? { clientName: resolvedClient } : undefined
       )
       if (error) {
         setSubmitError(error || sq.orderFailed)
@@ -105,7 +117,7 @@ export default function OrderPage() {
           <h1>{sq.orderSent}</h1>
           <p className="order-confirm-sub">
             {isClientDest
-              ? sq.bringToOffice(clientName!)
+              ? sq.bringToOffice(resolvedClient!)
               : sq.bringToTable()}
           </p>
           {lastOrder && (
@@ -162,7 +174,7 @@ export default function OrderPage() {
           <h1 className="review-title">{sq.yourOrder}</h1>
           {isClientDest && (
             <p className="client-dest-banner">
-              {sq.officeOrder} · {clientName}
+              {sq.officeOrder} · {resolvedClient}
             </p>
           )}
         </header>
@@ -268,7 +280,7 @@ export default function OrderPage() {
           <h1 className="order-shop-name">{SHOP_NAME}</h1>
           {isClientDest && (
             <p className="client-dest-banner">
-              {sq.officeOrder} · {clientName}
+              {sq.officeOrder} · {resolvedClient}
             </p>
           )}
         </div>
