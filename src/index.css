@@ -2430,114 +2430,98 @@ code {
   margin-top: 0.75rem;
 }
 
-/* —— Shankist: cold cool tones —— */
+/*
+ * Shankist / Kamerier: same layout as original light board.
+ * Only a light cool vs warm tint — no dark headers / heavy redesign.
+ */
 .dashboard-page.theme-barista {
-  --paper: #eef3f7;
-  --line: #c5d0dc;
-  --ink: #1a2836;
-  --ink-muted: #5a6d80;
-  --terracotta: #4a7a9b;
-  --terracotta-deep: #2f5f7d;
-  background: linear-gradient(180deg, #d8e4ee 0%, #eef3f7 40%, #f4f7fa 100%);
-  min-height: 100vh;
+  background: #f6f8fa;
   color: var(--ink);
 }
 
 .dashboard-page.theme-barista .dashboard-header {
-  background: #1e3a4f;
-  color: #e8f0f6;
-  border-bottom: 1px solid #2a4a62;
+  background: #ffffff;
+  color: var(--ink);
+  border-bottom: 1px solid #d8e0e8;
+  box-shadow: 0 1px 0 rgba(42, 33, 28, 0.04);
 }
 
 .dashboard-page.theme-barista .dashboard-header h1,
 .dashboard-page.theme-barista .stat-value {
-  color: #f0f6fa;
+  color: var(--ink);
 }
 
 .dashboard-page.theme-barista .stat-label {
-  color: #9bb4c8;
+  color: var(--ink-muted);
+}
+
+.dashboard-page.theme-barista .sound-toggle,
+.dashboard-page.theme-barista .logout-btn {
+  background: #eef2f6;
+  border-color: #d0d8e0;
+  color: var(--ink-soft);
 }
 
 .dashboard-page.theme-barista .order-card {
-  background: #f7fafc;
-  border-color: #b8c9d8;
-  border-left-color: #3d7a9e;
-  box-shadow: 0 2px 10px rgba(30, 58, 79, 0.08);
-}
-
-.dashboard-page.theme-barista .btn-done {
-  background: #2f6f8f;
-  color: #fff;
+  border-left-color: #6a90ab;
 }
 
 .dashboard-page.theme-barista .pending-pill {
-  background: #2a4a62;
-  color: #b8d4e8;
+  background: #e8eef4;
+  color: #3d5a70;
 }
 
-.dashboard-page.theme-barista .logout-btn,
-.dashboard-page.theme-barista .sound-toggle {
-  border-color: #3d5a72;
-  color: #d0e0ec;
+.dashboard-page.theme-barista .role-pill {
+  background: #e8eef4;
+  color: #3d5a70;
+  border-color: #c8d4e0;
 }
 
-/* —— Kamerier: warm tones —— */
 .dashboard-page.theme-waitress {
-  --paper: #faf6f0;
-  --line: #e0d0bc;
-  --ink: #2a2018;
-  --ink-muted: #7a6555;
-  --terracotta: #c47840;
-  --terracotta-deep: #9a5528;
-  background: linear-gradient(180deg, #f3e4d2 0%, #faf6f0 45%, #fbf8f4 100%);
-  min-height: 100vh;
+  background: #faf8f5;
   color: var(--ink);
 }
 
 .dashboard-page.theme-waitress .dashboard-header {
-  background: #3d2a1c;
-  color: #f8efe4;
-  border-bottom: 1px solid #5a4030;
+  background: #ffffff;
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgba(42, 33, 28, 0.04);
 }
 
 .dashboard-page.theme-waitress .dashboard-header h1,
 .dashboard-page.theme-waitress .stat-value {
-  color: #fff8f0;
+  color: var(--ink);
 }
 
 .dashboard-page.theme-waitress .stat-label {
-  color: #c4a888;
+  color: var(--ink-muted);
+}
+
+.dashboard-page.theme-waitress .sound-toggle,
+.dashboard-page.theme-waitress .logout-btn {
+  background: #f6f1e8;
+  border-color: var(--line);
+  color: var(--ink-soft);
 }
 
 .dashboard-page.theme-waitress .order-card.is-bill {
-  background: #fffaf4;
-  border-color: #e5d0b8;
   border-left-color: #c47840;
 }
 
 .dashboard-page.theme-waitress .order-card.is-bill.is-ready {
   border-left-color: #b8860b;
-  background: #fff8e8;
-}
-
-.dashboard-page.theme-waitress .btn-done {
-  background: #c47840;
-  color: #fff;
 }
 
 .dashboard-page.theme-waitress .pending-pill {
-  background: #5a4030;
-  color: #f0d8b8;
+  background: #f3ebe0;
+  color: #6a4a30;
 }
 
-.dashboard-page.theme-waitress .logout-btn,
-.dashboard-page.theme-waitress .sound-toggle {
-  border-color: #6a4a35;
-  color: #f0e0d0;
-}
-
-.dashboard-page.theme-waitress .manual-open-btn {
-  background: #c47840;
+.dashboard-page.theme-waitress .role-pill {
+  background: #f3ebe0;
+  color: #6a4a30;
+  border-color: #e0d0bc;
 }
 
 /* Rounds on kamerier bill card */
