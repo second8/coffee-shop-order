@@ -133,6 +133,7 @@ a.btn {
   --radius-sm: 10px;
   --font-display: 'Geist', system-ui, -apple-system, sans-serif;
   --font-body: 'Geist', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -381,13 +382,14 @@ code {
 }
 
 .menu-category {
-  font-family: var(--font-body);
-  font-size: 0.8rem;
+  font-family: var(--font-serif);
+  font-size: 1.55rem;
   font-weight: 400;
   letter-spacing: -0.02em;
-  text-transform: uppercase;
-  color: var(--ink-muted);
-  padding: 0.1rem 0 0.35rem 0.55rem;
+  text-transform: none;
+  color: var(--ink);
+  line-height: 1.15;
+  padding: 0.25rem 0 0.45rem 0.55rem;
   border-bottom: 1px solid var(--line);
   border-left: 3px solid var(--highlight);
 }
