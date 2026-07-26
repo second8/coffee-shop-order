@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { menu } from '../data/menu'
-import type { CartItem, Order, StaffSession } from '../types'
+import type { CartItem, Order, StaffProfile, StaffSession } from '../types'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
@@ -24,6 +24,7 @@ const SESSION_ID_KEY = 'cafe-sol-session-id'
 const MAX_TABLE = 100
 const MAX_QTY_PER_ITEM = 20
 const MAX_LINES = 30
+const MAX_NOTE_LEN = 280
 const ARCHIVE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 const menuPriceByName = new Map(
@@ -111,13 +112,22 @@ export function subscribeDemoOrders(onChange: () => void): () => void {
   }
 }
 
+export function sanitizeNote(raw: string | null | undefined): string | null {
+  if (raw == null) return null
+  const t = raw.trim().replace(/\s+/g, ' ')
+  if (!t) return null
+  return t.slice(0, MAX_NOTE_LEN)
+}
+
 export async function createOrder(
   tableNumber: number,
   items: CartItem[],
-  _total: number
+  _total: number,
+  note?: string | null
 ): Promise<{ data: Order | null; error: string | null }> {
   const sanitized = sanitizeOrderInput(tableNumber, items)
   if (sanitized.error) return { data: null, error: sanitized.error }
+  const cleanNote = sanitizeNote(note)
 
   if (!supabase) {
     const order: Order = {
@@ -130,6 +140,7 @@ export async function createOrder(
       completed_at: null,
       completed_by: null,
       archived_at: null,
+      note: cleanNote,
     }
     writeDemoOrders([order, ...readDemoOrders()])
     return { data: order, error: null }
@@ -142,6 +153,7 @@ export async function createOrder(
       body: JSON.stringify({
         table_number: tableNumber,
         items: sanitized.items,
+        note: cleanNote,
       }),
     })
     if (apiRes.ok) {
@@ -152,14 +164,39 @@ export async function createOrder(
     // fall through
   }
 
-  const { error } = await supabase.from('orders').insert({
+  const row: Record<string, unknown> = {
     table_number: tableNumber,
     items: sanitized.items,
     total: sanitized.total,
     status: 'pending',
-  })
+  }
+  if (cleanNote) row.note = cleanNote
+
+  const { error } = await supabase.from('orders').insert(row)
 
   if (error) {
+    // Retry without note if column missing
+    if (cleanNote && error.message.toLowerCase().includes('note')) {
+      const { error: e2 } = await supabase.from('orders').insert({
+        table_number: tableNumber,
+        items: sanitized.items,
+        total: sanitized.total,
+        status: 'pending',
+      })
+      if (e2) return { data: null, error: e2.message }
+      return {
+        data: {
+          id: crypto.randomUUID(),
+          table_number: tableNumber,
+          items: sanitized.items,
+          total: sanitized.total,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+          note: null,
+        },
+        error: null,
+      }
+    }
     return { data: null, error: error.message }
   }
 
@@ -174,6 +211,7 @@ export async function createOrder(
       completed_at: null,
       completed_by: null,
       archived_at: null,
+      note: cleanNote,
     },
     error: null,
   }
@@ -190,10 +228,8 @@ export async function fetchTodayOrders(): Promise<{
 const ORDER_SELECT_BASE =
   'id,table_number,items,total,status,created_at,completed_at,completed_by'
 
-/** Full select after MIGRATION_V2.sql */
-const ORDER_SELECT_FULL = `${ORDER_SELECT_BASE},archived_at`
-
 let schemaSupportsArchive: boolean | null = null
+let schemaSupportsNote: boolean | null = null
 
 /** Detect whether archived_at exists (cached). */
 export async function detectArchiveSupport(): Promise<boolean> {
@@ -210,6 +246,26 @@ export async function detectArchiveSupport(): Promise<boolean> {
   return schemaSupportsArchive
 }
 
+export async function detectNoteSupport(): Promise<boolean> {
+  if (schemaSupportsNote !== null) return schemaSupportsNote
+  if (!supabase) {
+    schemaSupportsNote = true
+    return true
+  }
+  const { error } = await supabase.from('orders').select('note').limit(1)
+  schemaSupportsNote = !error
+  return schemaSupportsNote
+}
+
+async function orderSelectCols(): Promise<string> {
+  const hasArchive = await detectArchiveSupport()
+  const hasNote = await detectNoteSupport()
+  let cols = ORDER_SELECT_BASE
+  if (hasArchive) cols += ',archived_at'
+  if (hasNote) cols += ',note'
+  return cols
+}
+
 export async function fetchOrdersSince(sinceIso: string): Promise<{
   data: Order[]
   error: string | null
@@ -224,8 +280,7 @@ export async function fetchOrdersSince(sinceIso: string): Promise<{
     return { data: list, error: null }
   }
 
-  const hasArchive = await detectArchiveSupport()
-  const cols = hasArchive ? ORDER_SELECT_FULL : ORDER_SELECT_BASE
+  const cols = await orderSelectCols()
   const { data, error } = await supabase
     .from('orders')
     .select(cols)
@@ -260,9 +315,10 @@ export async function fetchArchivedOrders(): Promise<{
     }
   }
 
+  const cols = await orderSelectCols()
   const { data, error } = await supabase
     .from('orders')
-    .select(ORDER_SELECT_FULL)
+    .select(cols)
     .not('archived_at', 'is', null)
     .order('archived_at', { ascending: false })
     .limit(500)
@@ -498,21 +554,90 @@ export async function fetchStaffSessions(sinceIso: string): Promise<{
   return { data: (data as StaffSession[]) ?? [], error: null }
 }
 
+function friendlyStaffName(
+  displayName: string | null | undefined,
+  role: string | null | undefined,
+  index?: number
+): string {
+  const n = (displayName || '').trim()
+  if (n) return n
+  if (role === 'admin') return 'Admin'
+  if (typeof index === 'number') return `Punëtor ${index}`
+  return 'Punëtor'
+}
+
+export async function fetchStaffProfiles(): Promise<{
+  data: StaffProfile[]
+  error: string | null
+}> {
+  if (!supabase) {
+    return {
+      data: [
+        {
+          id: 'demo-admin',
+          email: 'admin@demo.local',
+          role: 'admin',
+          display_name: 'Admin',
+        },
+        {
+          id: 'demo-worker',
+          email: 'worker@demo.local',
+          role: 'worker',
+          display_name: 'Punëtor 1',
+        },
+      ],
+      error: null,
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('staff_profiles')
+    .select('id, role, display_name')
+    .order('role', { ascending: true })
+
+  if (error) return { data: [], error: error.message }
+
+  let workerIdx = 0
+  const list: StaffProfile[] = (data ?? []).map((row) => {
+    const role = row.role === 'admin' ? 'admin' : 'worker'
+    if (role === 'worker') workerIdx += 1
+    return {
+      id: row.id as string,
+      email: '',
+      role,
+      display_name: friendlyStaffName(
+        row.display_name as string | null,
+        role,
+        role === 'worker' ? workerIdx : undefined
+      ),
+    }
+  })
+  return { data: list, error: null }
+}
+
 export async function fetchStaffNameMap(): Promise<Record<string, string>> {
   if (!supabase) {
     return {
       'demo-admin': 'Admin',
-      'demo-worker': 'Punëtor',
+      'demo-worker': 'Punëtor 1',
     }
   }
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('staff_profiles')
     .select('id, display_name, role')
+
   const map: Record<string, string> = {}
-  for (const row of data ?? []) {
-    map[row.id as string] =
-      (row.display_name as string) ||
-      (row.role === 'admin' ? 'Admin' : 'Punëtor')
+  if (error || !data) return map
+
+  let workerIdx = 0
+  for (const row of data) {
+    const role = row.role as string
+    if (role === 'worker') workerIdx += 1
+    map[row.id as string] = friendlyStaffName(
+      row.display_name as string | null,
+      role,
+      role === 'worker' ? workerIdx : undefined
+    )
   }
   return map
 }
@@ -610,7 +735,7 @@ export function buildWorkerStats(
   return [...map.entries()]
     .map(([userId, v]) => ({
       userId,
-      name: names[userId] || userId.slice(0, 8),
+      name: names[userId] || 'Staf',
       done: v.done,
       cancelled: v.cancelled,
       revenue: v.revenue,
@@ -620,6 +745,68 @@ export function buildWorkerStats(
           : v.seconds.reduce((a, b) => a + b, 0) / v.seconds.length,
     }))
     .sort((a, b) => b.done - a.done)
+}
+
+/** Merge staff list with per-worker stats (zeros for idle staff). */
+export function mergeWorkerRoster(
+  profiles: StaffProfile[],
+  orders: Order[],
+  names: Record<string, string>
+): {
+  userId: string
+  name: string
+  role: string
+  done: number
+  cancelled: number
+  revenue: number
+  avgSeconds: number | null
+}[] {
+  const stats = buildWorkerStats(orders, names)
+  const byId = new Map(stats.map((s) => [s.userId, s]))
+  const fromProfiles = profiles.map((p) => {
+    const s = byId.get(p.id)
+    return {
+      userId: p.id,
+      name: p.display_name || names[p.id] || (p.role === 'admin' ? 'Admin' : 'Punëtor'),
+      role: p.role,
+      done: s?.done ?? 0,
+      cancelled: s?.cancelled ?? 0,
+      revenue: s?.revenue ?? 0,
+      avgSeconds: s?.avgSeconds ?? null,
+    }
+  })
+  // Include completers not in profiles (edge case)
+  for (const s of stats) {
+    if (!fromProfiles.some((p) => p.userId === s.userId)) {
+      fromProfiles.push({
+        userId: s.userId,
+        name: s.name,
+        role: 'worker',
+        done: s.done,
+        cancelled: s.cancelled,
+        revenue: s.revenue,
+        avgSeconds: s.avgSeconds,
+      })
+    }
+  }
+  return fromProfiles.sort((a, b) => b.done - a.done || a.name.localeCompare(b.name))
+}
+
+export function ordersByWorker(
+  orders: Order[],
+  userId: string
+): Order[] {
+  return orders
+    .filter(
+      (o) =>
+        o.completed_by === userId &&
+        (o.status === 'done' || o.status === 'cancelled')
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.completed_at || b.created_at).getTime() -
+        new Date(a.completed_at || a.created_at).getTime()
+    )
 }
 
 export function buildPeakHours(orders: Order[]): {
@@ -653,6 +840,7 @@ export function ordersToCsv(orders: Order[]): string {
     'completed_by',
     'total',
     'items',
+    'note',
   ]
   const rows = orders.map((o) => {
     const items = o.items
@@ -665,6 +853,7 @@ export function ordersToCsv(orders: Order[]): string {
         60000
       ).toFixed(1)
     }
+    const note = (o.note ?? '').replace(/"/g, '""')
     return [
       o.id,
       o.created_at,
@@ -676,6 +865,7 @@ export function ordersToCsv(orders: Order[]): string {
       o.completed_by ?? '',
       Number(o.total).toFixed(2),
       `"${items.replace(/"/g, '""')}"`,
+      `"${note}"`,
     ].join(',')
   })
   return [header.join(','), ...rows].join('\n')

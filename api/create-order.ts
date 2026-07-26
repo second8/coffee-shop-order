@@ -82,20 +82,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
+  let note: string | null = null
+  if (typeof body?.note === 'string') {
+    const t = body.note.trim().replace(/\s+/g, ' ')
+    if (t) note = t.slice(0, 280)
+  }
+
   const supabase = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 
-  const { data, error } = await supabase
-    .from('orders')
-    .insert({
-      table_number: sanitized.table,
-      items: sanitized.items,
-      total: sanitized.total,
-      status: 'pending',
-    })
-    .select()
-    .single()
+  const row: Record<string, unknown> = {
+    table_number: sanitized.table,
+    items: sanitized.items,
+    total: sanitized.total,
+    status: 'pending',
+  }
+  if (note) row.note = note
+
+  let { data, error } = await supabase.from('orders').insert(row).select().single()
+
+  // If note column missing, insert without it
+  if (error && note && String(error.message).toLowerCase().includes('note')) {
+    const retry = await supabase
+      .from('orders')
+      .insert({
+        table_number: sanitized.table,
+        items: sanitized.items,
+        total: sanitized.total,
+        status: 'pending',
+      })
+      .select()
+      .single()
+    data = retry.data
+    error = retry.error
+  }
 
   if (error) {
     res.status(400).json({ error: error.message })

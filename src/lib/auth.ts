@@ -100,19 +100,10 @@ export async function fetchStaffProfile(
 
   const email = user.email ?? ''
   const metaRole = roleFromUser(user)
+  const metaName =
+    (user.user_metadata?.display_name as string | undefined) ?? null
 
-  if (metaRole) {
-    return {
-      id: user.id,
-      email,
-      role: metaRole,
-      display_name:
-        (user.user_metadata?.display_name as string | undefined) ??
-        email.split('@')[0] ??
-        null,
-    }
-  }
-
+  // Always try profiles table for real display_name (Punëtor 1, etc.)
   const { data, error } = await supabase
     .from('staff_profiles')
     .select('id, role, display_name')
@@ -128,7 +119,19 @@ export async function fetchStaffProfile(
       id: data.id as string,
       email,
       role: data.role as StaffRole,
-      display_name: (data.display_name as string | null) ?? null,
+      display_name:
+        (data.display_name as string | null) ||
+        metaName ||
+        (data.role === 'admin' ? 'Admin' : email.split('@')[0] || 'Punëtor'),
+    }
+  }
+
+  if (metaRole) {
+    return {
+      id: user.id,
+      email,
+      role: metaRole,
+      display_name: metaName ?? email.split('@')[0] ?? null,
     }
   }
 
@@ -137,8 +140,23 @@ export async function fetchStaffProfile(
     id: user.id,
     email,
     role: 'worker',
-    display_name: email.split('@')[0] ?? null,
+    display_name: metaName ?? email.split('@')[0] ?? null,
   }
+}
+
+/**
+ * Start a work session if this browser tab does not already have one
+ * (e.g. after page refresh while still logged in).
+ */
+export async function ensureStaffSession(
+  profile: StaffProfile
+): Promise<void> {
+  const existing =
+    typeof sessionStorage !== 'undefined'
+      ? sessionStorage.getItem('cafe-sol-session-id')
+      : null
+  if (existing) return
+  await startStaffSession(profile.id, profile.display_name)
 }
 
 export async function getSession(): Promise<Session | null> {

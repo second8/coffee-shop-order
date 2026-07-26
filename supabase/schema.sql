@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS orders (
 -- Add columns if table already existed from v1
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS completed_by uuid REFERENCES auth.users(id);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS archived_at timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS note text;
 
 CREATE INDEX IF NOT EXISTS orders_created_at_idx ON orders (created_at DESC);
 CREATE INDEX IF NOT EXISTS orders_status_idx ON orders (status);

@@ -10,6 +10,7 @@ ALTER TABLE orders
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS archived_at timestamptz;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS completed_by uuid;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS note text;
 
 CREATE INDEX IF NOT EXISTS orders_archived_at_idx ON orders (archived_at);
 CREATE INDEX IF NOT EXISTS orders_status_created_idx ON orders (status, created_at DESC);

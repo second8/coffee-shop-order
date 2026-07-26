@@ -20,23 +20,35 @@ export default function OrderPage() {
   const [screen, setScreen] = useState<Screen>('menu')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [note, setNote] = useState('')
   const [lastOrder, setLastOrder] = useState<{
     items: CartItem[]
     total: number
+    note: string | null
   } | null>(null)
 
   const handleSubmit = async () => {
     if (cart.items.length === 0 || submitting) return
     setSubmitting(true)
     setSubmitError(null)
-    const { error } = await createOrder(tableNumber, cart.items, cart.total)
+    const { error } = await createOrder(
+      tableNumber,
+      cart.items,
+      cart.total,
+      note
+    )
     setSubmitting(false)
     if (error) {
       setSubmitError(error)
       return
     }
-    setLastOrder({ items: cart.items, total: cart.total })
+    setLastOrder({
+      items: cart.items,
+      total: cart.total,
+      note: note.trim() || null,
+    })
     cart.clear()
+    setNote('')
     setScreen('confirmation')
   }
 
@@ -73,6 +85,11 @@ export default function OrderPage() {
                   <span>{formatEuro(item.price * item.quantity)}</span>
                 </div>
               ))}
+              {lastOrder.note && (
+                <p className="order-confirm-note">
+                  <strong>{sq.noteLabel}:</strong> {lastOrder.note}
+                </p>
+              )}
               <div className="order-confirm-total">
                 <span>{sq.total}</span>
                 <span>{formatEuro(lastOrder.total)}</span>
@@ -85,6 +102,7 @@ export default function OrderPage() {
             onClick={() => {
               setLastOrder(null)
               setSubmitError(null)
+              setNote('')
               setScreen('menu')
             }}
           >
@@ -152,6 +170,23 @@ export default function OrderPage() {
                 </li>
               ))}
             </ul>
+          )}
+          {cart.items.length > 0 && (
+            <div className="order-note-field">
+              <label className="order-note-label" htmlFor="order-note">
+                {sq.orderNote}
+              </label>
+              <p className="order-note-hint">{sq.orderNoteHint}</p>
+              <textarea
+                id="order-note"
+                className="order-note-input"
+                rows={3}
+                maxLength={280}
+                placeholder={sq.orderNotePlaceholder}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </div>
           )}
           {submitError && <p className="form-error">{submitError}</p>}
         </main>

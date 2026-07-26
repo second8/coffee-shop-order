@@ -26,6 +26,8 @@ export interface Order {
   completed_at?: string | null
   completed_by?: string | null
   archived_at?: string | null
+  /** Customer or staff note (add/remove requests, allergies, etc.) */
+  note?: string | null
 }
 
 export type StaffRole = 'admin' | 'worker'

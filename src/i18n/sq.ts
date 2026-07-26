@@ -22,6 +22,13 @@ export const sq = {
   homeDemo:
     'Demo — porositë ruhen në këtë shfletues. Për live, lidhni Supabase.',
 
+  /** Optional note on order (customer or staff) */
+  orderNote: 'Shënim',
+  orderNotePlaceholder:
+    'P.sh. pa akull, pa sheqer, shtoni limon, hiqni x…',
+  orderNoteHint: 'Opsionale — diçka për të shtuar ose hequr',
+  noteLabel: 'Shënim',
+
   staffAccess: 'Hyrja e stafit',
   staffHint: 'Hyni me emailin dhe fjalëkalimin tuaj',
   email: 'Email',
@@ -76,6 +83,12 @@ export const sq = {
   itemCol: 'Artikulli',
   qty: 'Sasia',
   rev: 'Të ardhura',
+  showMore: 'Shfaq më shumë',
+  showLess: 'Shfaq më pak',
+  cancelledRate: 'Anulime',
+  topItem: 'Më i shituri',
+  activeTables: 'Tavolina aktive',
+  itemsTotal: 'Artikuj total',
 
   avgSpeed: 'Koha mesatare',
   medianSpeed: 'Mediana',
@@ -84,6 +97,13 @@ export const sq = {
   completionList: 'Porositë e përfunduara',
   duration: 'Kohëzgjatja',
   noSpeedData: 'Nuk ka të dhëna shpejtësie ende.',
+  allWorkers: 'Të gjithë punëtorët',
+  workerProfile: 'Profili i punëtorit',
+  backToWorkers: '← Të gjithë punëtorët',
+  workerOrders: 'Porositë e tyre',
+  orderDetails: 'Detajet e porosisë',
+  noWorkerOrders: 'Asnjë porosi e përfunduar nga ky person në këtë periudhë.',
+  openProfile: 'Shiko profilin',
 
   workerStats: 'Punëtorët',
   finished: 'Përfunduar',
@@ -92,10 +112,14 @@ export const sq = {
   tableStats: 'Tavolinat (më të zëna)',
   peakHours: 'Orët e pikut',
   sessions: 'Sesionet e punës',
+  onlineNow: 'Online tani',
+  offline: 'Offline',
   loggedIn: 'Hyrë',
   loggedOut: 'Dalë',
   stillActive: 'Aktiv tani',
-  noSessions: 'Nuk ka sesione ende.',
+  noSessions:
+    'Nuk ka sesione ende. Sigurohu që MIGRATION_V2.sql është ekzekutuar dhe stafi ka hyrë përsëri.',
+  noWorkersListed: 'Nuk u gjetën profile stafi. Kontrollo staff_profiles në Supabase.',
   archiveEmpty: 'Arkiva është bosh.',
   archiveHint:
     'Këtu shkojnë porositë e arkivuara. Mund t’i ktheni, t’i fshini, ose fshihen vetë pas 7 ditësh.',
@@ -103,8 +127,25 @@ export const sq = {
   confirmDelete: 'Fshi përgjithmonë këtë porosi?',
   confirmCancel: 'Anulo këtë porosi?',
   migrationHint:
-    'Për anulo/arkivë/sesione: ekzekuto supabase/MIGRATION_V2.sql në Supabase SQL Editor.',
+    'Për anulo/arkivë/sesione/shënime: ekzekuto supabase/MIGRATION_V2.sql në Supabase SQL Editor.',
   unknownStaff: 'Staf',
   hour: 'Ora',
   count: 'Nr.',
+
+  /** Priority / wait */
+  waiting: 'Në pritje',
+  priority: 'Prioritet',
+  priorityWarm: '5+ min',
+  priorityHot: '10+ min',
+  priorityCritical: '15+ min — urgjent',
+
+  /** Manual order */
+  manualOrder: 'Porosi manuale',
+  manualOrderTitle: 'Shto porosi (tavolinë / bar)',
+  selectTable: 'Zgjidh tavolinën',
+  selectItems: 'Shto artikuj',
+  confirmManual: 'Konfirmo porosinë',
+  manualSuccess: 'Porosia u shtua',
+  close: 'Mbyll',
+  addManual: '+ Porosi manuale',
 } as const
