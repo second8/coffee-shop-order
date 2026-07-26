@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   markPartialPay,
   markTablePaid,
+  tableBillAlreadyPaid,
   tableBillLines,
+  tableBillPaidSummary,
   type TableBill,
 } from '../lib/orders'
 import { formatEuro } from '../utils/format'
@@ -20,15 +22,20 @@ export default function TablePayModal({
   bill: TableBill
   staffId?: string | null
   onClose: () => void
-  /** After person pay — stay open, parent refreshes bill */
   onPartialPaid: () => void
-  /** Table visit closed */
   onFullyPaid: () => void
 }) {
   const lines = useMemo(
-    () => tableBillLines(bill, { readyOnly: true }),
+    () => tableBillLines(bill, { readyOnly: true, includePaid: true }),
     [bill]
   )
+  const openLines = useMemo(
+    () => lines.filter((l) => l.unpaid > 0),
+    [lines]
+  )
+  const paidSummary = useMemo(() => tableBillPaidSummary(bill), [bill])
+  const alreadyPaid = useMemo(() => tableBillAlreadyPaid(bill), [bill])
+
   const [selection, setSelection] = useState<Record<string, number>>({})
   const [mode, setMode] = useState<Mode>('items')
   const [people, setPeople] = useState(2)
@@ -37,25 +44,30 @@ export default function TablePayModal({
   const [okFlash, setOkFlash] = useState<string | null>(null)
 
   useEffect(() => {
-    const init: Record<string, number> = {}
-    for (const line of lines) init[line.key] = 0
-    setSelection(init)
+    // Keep selection only for lines still open; clear closed ones
+    setSelection((prev) => {
+      const next: Record<string, number> = {}
+      for (const line of openLines) {
+        next[line.key] = Math.min(prev[line.key] ?? 0, line.unpaid)
+      }
+      return next
+    })
     setErr(null)
-  }, [bill.table, bill.unpaid, bill.readyCount, lines])
+  }, [bill.table, bill.unpaid, bill.readyCount, openLines])
 
   const payAmount = useMemo(() => {
     let s = 0
-    for (const line of lines) {
+    for (const line of openLines) {
       const n = Math.min(line.unpaid, Math.floor(selection[line.key] ?? 0))
       s += n * line.price
     }
     return s
-  }, [lines, selection])
+  }, [openLines, selection])
 
   const remainingAfter = Math.max(0, bill.unpaid - payAmount)
 
   const selectedLines = useMemo(() => {
-    return lines
+    return openLines
       .map((line) => {
         const n = Math.min(line.unpaid, Math.floor(selection[line.key] ?? 0))
         if (n <= 0) return null
@@ -72,7 +84,7 @@ export default function TablePayModal({
       left: number
       total: number
     }[]
-  }, [lines, selection])
+  }, [openLines, selection])
 
   const equalShare =
     people >= 1 && bill.unpaid > 0
@@ -100,13 +112,13 @@ export default function TablePayModal({
 
   const selectAll = () => {
     const next: Record<string, number> = {}
-    for (const line of lines) next[line.key] = line.unpaid
+    for (const line of openLines) next[line.key] = line.unpaid
     setSelection(next)
   }
 
   const clearSel = () => {
     const next: Record<string, number> = {}
-    for (const line of lines) next[line.key] = 0
+    for (const line of openLines) next[line.key] = 0
     setSelection(next)
   }
 
@@ -114,6 +126,7 @@ export default function TablePayModal({
     if (busy || bill.unpaid <= 0) return
     setBusy(true)
     setErr(null)
+    setOkFlash(null)
     const { error, paidCount } = await markTablePaid(
       bill.table,
       bill.orders,
@@ -128,7 +141,6 @@ export default function TablePayModal({
       setErr(sq.pickSomething)
       return
     }
-    // If still pending kitchen tickets, stay for next rounds; else close
     if (bill.hasPending) {
       setOkFlash(sq.personPayOk)
       onPartialPaid()
@@ -149,7 +161,7 @@ export default function TablePayModal({
     setOkFlash(null)
 
     const byOrder = new Map<string, Record<string, number>>()
-    for (const line of lines) {
+    for (const line of openLines) {
       const n = Math.min(line.unpaid, Math.floor(selection[line.key] ?? 0))
       if (n <= 0) continue
       const map = byOrder.get(line.orderId) ?? {}
@@ -171,7 +183,6 @@ export default function TablePayModal({
     setBusy(false)
     setOkFlash(sq.personPayOk)
     clearSel()
-    // Stay on this screen for next person
     onPartialPaid()
   }
 
@@ -186,10 +197,18 @@ export default function TablePayModal({
             <h2>
               {sq.table} {bill.table}
             </h2>
-            <div className="pay-summary-bar">
+            <div className="pay-summary-bar pay-summary-4">
+              <div>
+                <span className="pay-sum-label">{sq.alreadyPaid}</span>
+                <strong className="pay-sum-value pay-sum-paid">
+                  {formatEuro(alreadyPaid)}
+                </strong>
+              </div>
               <div>
                 <span className="pay-sum-label">{sq.readyToCollect}</span>
-                <strong className="pay-sum-value">{formatEuro(bill.unpaid)}</strong>
+                <strong className="pay-sum-value">
+                  {formatEuro(bill.unpaid)}
+                </strong>
               </div>
               <div>
                 <span className="pay-sum-label">{sq.thisPayment}</span>
@@ -234,13 +253,53 @@ export default function TablePayModal({
         </div>
 
         <div className="manual-sheet-body">
-          {!canPay ? (
+          {/* Always show what was already paid */}
+          {paidSummary.length > 0 && (
+            <div className="paid-so-far-block">
+              <h3 className="paid-so-far-title">{sq.alreadyPaidList}</h3>
+              <ul className="paid-so-far-list">
+                {paidSummary.map((row) => (
+                  <li key={row.name}>
+                    <span>
+                      {row.quantity}× {row.name}
+                    </span>
+                    <span className="paid-so-far-amt">
+                      {formatEuro(row.amount)} · {sq.paidLine}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="paid-so-far-total">
+                <span>{sq.alreadyPaid}</span>
+                <strong>{formatEuro(alreadyPaid)}</strong>
+              </div>
+            </div>
+          )}
+
+          {!canPay && paidSummary.length === 0 ? (
             <p className="empty-state">{sq.noReadyToPay}</p>
+          ) : !canPay ? (
+            <p className="empty-state">{sq.allReadyPaid}</p>
           ) : mode === 'items' ? (
             <>
               <p className="manual-help">{sq.payPerPersonHint}</p>
+              <h3 className="pay-open-title">{sq.stillToPay}</h3>
               <ul className="pay-lines">
                 {lines.map((line) => {
+                  if (line.unpaid <= 0) {
+                    return (
+                      <li key={line.key} className="pay-line is-fully-paid">
+                        <div className="pay-line-info">
+                          <strong>{line.name}</strong>
+                          <span>
+                            {line.quantity}× · {sq.paidLine} (
+                            {formatEuro(line.price * line.quantity)})
+                          </span>
+                        </div>
+                        <span className="pay-line-badge">{sq.paidLine}</span>
+                      </li>
+                    )
+                  }
                   const sel = selection[line.key] ?? 0
                   const left = line.unpaid - sel
                   return (
@@ -251,7 +310,15 @@ export default function TablePayModal({
                       <div className="pay-line-info">
                         <strong>{line.name}</strong>
                         <span>
-                          {formatEuro(line.price)} · {sq.onBill}: {line.unpaid}
+                          {formatEuro(line.price)} · {sq.onBill}: {line.quantity}
+                          {line.paid_quantity > 0 && (
+                            <>
+                              {' '}
+                              · {sq.alreadyPaidShort}: {line.paid_quantity}
+                            </>
+                          )}
+                          {' · '}
+                          {sq.unpaidQty}: {line.unpaid}
                         </span>
                         {sel > 0 && (
                           <span className="pay-line-live">
@@ -371,6 +438,10 @@ export default function TablePayModal({
         <footer className="manual-sheet-footer">
           <div className="manual-footer-meta pay-footer-grid">
             <div>
+              <span className="pay-sum-label">{sq.alreadyPaid}</span>
+              <strong>{formatEuro(alreadyPaid)}</strong>
+            </div>
+            <div>
               <span className="pay-sum-label">{sq.thisPayment}</span>
               <strong>
                 {formatEuro(mode === 'equal' ? bill.unpaid : payAmount)}
@@ -385,7 +456,7 @@ export default function TablePayModal({
           </div>
           {err && <p className="form-error">{err}</p>}
 
-          {mode === 'items' && (
+          {mode === 'items' && canPay && (
             <button
               type="button"
               className="btn btn-primary btn-block btn-lg manual-confirm-btn"
@@ -398,11 +469,11 @@ export default function TablePayModal({
             </button>
           )}
 
-          {(mode === 'equal' || mode === 'items') && (
+          {canPay && (
             <button
               type="button"
               className="btn btn-secondary btn-block btn-lg"
-              disabled={busy || !canPay}
+              disabled={busy}
               onClick={() => void payFullReady()}
             >
               {sq.payAllReady} ({formatEuro(bill.unpaid)})

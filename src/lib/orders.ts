@@ -767,10 +767,10 @@ export function buildTableBills(
   )
 }
 
-/** Flatten unpaid lines — only Gati tickets (kamerier can collect now). */
+/** Flatten bill lines for Gati tickets (kamerier collect UI). */
 export function tableBillLines(
   bill: TableBill,
-  opts?: { readyOnly?: boolean }
+  opts?: { readyOnly?: boolean; includePaid?: boolean }
 ): {
   key: string
   orderId: string
@@ -782,6 +782,7 @@ export function tableBillLines(
   ready: boolean
 }[] {
   const readyOnly = opts?.readyOnly !== false
+  const includePaid = opts?.includePaid !== false
   const lines: {
     key: string
     orderId: string
@@ -797,7 +798,10 @@ export function tableBillLines(
     if (readyOnly && !ready) continue
     for (const item of o.items) {
       const unpaid = lineUnpaidQty(item)
-      if (unpaid <= 0) continue
+      const paid = linePaidQty(item)
+      // Skip empty; keep fully-paid rows when includePaid so kamerier sees history
+      if (unpaid <= 0 && paid <= 0) continue
+      if (unpaid <= 0 && !includePaid) continue
       lines.push({
         key: `${o.id}::${item.name}`,
         orderId: o.id,
@@ -805,12 +809,47 @@ export function tableBillLines(
         price: item.price,
         unpaid,
         quantity: item.quantity,
-        paid_quantity: linePaidQty(item),
+        paid_quantity: paid,
         ready,
       })
     }
   }
   return lines
+}
+
+/** Sum already paid on ready tickets (partial payments so far). */
+export function tableBillAlreadyPaid(bill: TableBill): number {
+  let s = 0
+  for (const o of bill.orders) {
+    if (o.status !== 'done') continue
+    for (const item of o.items) {
+      s += item.price * linePaidQty(item)
+    }
+  }
+  return s
+}
+
+/** Aggregate paid lines by name for display (e.g. 3× Espresso e paguar). */
+export function tableBillPaidSummary(bill: TableBill): {
+  name: string
+  quantity: number
+  amount: number
+}[] {
+  const map = new Map<string, { quantity: number; amount: number }>()
+  for (const o of bill.orders) {
+    if (o.status !== 'done') continue
+    for (const item of o.items) {
+      const paid = linePaidQty(item)
+      if (paid <= 0) continue
+      const prev = map.get(item.name) ?? { quantity: 0, amount: 0 }
+      prev.quantity += paid
+      prev.amount += paid * item.price
+      map.set(item.name, prev)
+    }
+  }
+  return [...map.entries()]
+    .map(([name, v]) => ({ name, ...v }))
+    .sort((a, b) => b.quantity - a.quantity)
 }
 
 /** Mark ready (gati) open tickets for a table as fully paid. */

@@ -2217,6 +2217,93 @@ code {
   margin-top: 0.65rem;
 }
 
+.pay-summary-bar.pay-summary-4 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (min-width: 480px) {
+  .pay-summary-bar.pay-summary-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.pay-sum-paid {
+  color: #2d8a4e;
+}
+
+.paid-so-far-block {
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid #b8d9c4;
+  background: rgba(61, 155, 106, 0.1);
+}
+
+.paid-so-far-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #2d6a4a;
+}
+
+.paid-so-far-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.paid-so-far-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+}
+
+.paid-so-far-amt {
+  color: #2d6a4a;
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.paid-so-far-total {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed #8fc9a3;
+  font-weight: 700;
+}
+
+.pay-open-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.pay-line.is-fully-paid {
+  opacity: 0.72;
+  background: rgba(61, 155, 106, 0.08);
+  border-color: #b8d9c4;
+}
+
+.pay-line-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #2d8a4e;
+  white-space: nowrap;
+}
+
 .pay-sum-label {
   display: block;
   font-size: 0.68rem;
