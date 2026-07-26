@@ -194,13 +194,11 @@ export type CreateOrderOptions = {
   /**
    * Staff dashboard / manual order: one direct insert (no API).
    * Avoids double-insert when /api/create-order already wrote a row.
+   *
+   * Note: kitchen always gets a NEW ticket per submit (shankist tasks).
+   * Kamerier groups open tickets by table until "Paguaj".
    */
   mode?: 'customer' | 'staff'
-  /**
-   * When staff adds for a table that already has an open bill,
-   * append items to that order instead of creating a second ticket.
-   */
-  mergeOpenTable?: boolean
 }
 
 function buildOrderRow(
@@ -299,16 +297,8 @@ export async function createOrder(
     cleanNote
   )
 
-  // Staff / manual: single path only (no API) so we never write twice
+  // Staff / manual: always a new kitchen ticket (kamerier groups by table)
   if (mode === 'staff') {
-    if (options?.mergeOpenTable !== false) {
-      const merged = await mergeIntoOpenTableOrder(
-        tableNumber,
-        sanitized.items,
-        cleanNote
-      )
-      if (merged.data || merged.error) return merged
-    }
     return insertOrderDirect(row, cleanNote)
   }
 
@@ -654,6 +644,112 @@ export async function markPartialPay(
     error: null,
     paidAmount: result.paidAmount,
   }
+}
+
+/** One open invoice per table for kamerier (many kitchen tickets summed). */
+export type TableBill = {
+  table: number
+  orders: Order[]
+  /** Sum of unpaid remaining */
+  unpaid: number
+  /** Full ticket totals (including already partial-paid lines) */
+  gross: number
+  /** Any ticket still pending in kitchen */
+  hasPending: boolean
+  /** Every open ticket is kitchen-done */
+  allReady: boolean
+  /** Count of kitchen tickets on this open visit */
+  ticketCount: number
+  oldestAt: string
+}
+
+export function buildTableBills(orders: Order[]): TableBill[] {
+  const map = new Map<number, Order[]>()
+  for (const o of orders) {
+    if (!isOpenBill(o)) continue
+    const list = map.get(o.table_number) ?? []
+    list.push(o)
+    map.set(o.table_number, list)
+  }
+  const bills: TableBill[] = []
+  for (const [table, list] of map) {
+    list.sort(
+      (a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    )
+    const unpaid = list.reduce((s, o) => s + unpaidTotal(o), 0)
+    const gross = list.reduce((s, o) => s + Number(o.total), 0)
+    const hasPending = list.some((o) => o.status === 'pending')
+    const allReady = list.every((o) => o.status === 'done')
+    bills.push({
+      table,
+      orders: list,
+      unpaid,
+      gross,
+      hasPending,
+      allReady,
+      ticketCount: list.length,
+      oldestAt: list[0]!.created_at,
+    })
+  }
+  return bills.sort(
+    (a, b) =>
+      new Date(a.oldestAt).getTime() - new Date(b.oldestAt).getTime()
+  )
+}
+
+/** Flatten unpaid lines across tickets for split UI. */
+export function tableBillLines(bill: TableBill): {
+  key: string
+  orderId: string
+  name: string
+  price: number
+  unpaid: number
+  quantity: number
+  paid_quantity: number
+}[] {
+  const lines: {
+    key: string
+    orderId: string
+    name: string
+    price: number
+    unpaid: number
+    quantity: number
+    paid_quantity: number
+  }[] = []
+  for (const o of bill.orders) {
+    for (const item of o.items) {
+      const unpaid = lineUnpaidQty(item)
+      if (unpaid <= 0) continue
+      lines.push({
+        key: `${o.id}::${item.name}`,
+        orderId: o.id,
+        name: item.name,
+        price: item.price,
+        unpaid,
+        quantity: item.quantity,
+        paid_quantity: linePaidQty(item),
+      })
+    }
+  }
+  return lines
+}
+
+/** Mark every open ticket for a table as fully paid. */
+export async function markTablePaid(
+  tableNumber: number,
+  openOrders: Order[],
+  staffUserId?: string | null
+): Promise<{ error: string | null; paidCount: number }> {
+  let paidCount = 0
+  for (const o of openOrders) {
+    if (o.table_number !== tableNumber) continue
+    if (!isOpenBill(o)) continue
+    const { error } = await markOrderPaid(o.id, staffUserId)
+    if (error) return { error, paidCount }
+    paidCount += 1
+  }
+  return { error: null, paidCount }
 }
 
 /** Admin: delete all non-archived or all orders for a fresh start. */

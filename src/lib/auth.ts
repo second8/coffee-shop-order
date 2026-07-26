@@ -34,6 +34,13 @@ function roleFromUser(user: User): StaffRole | null {
   return normalizeRole(raw)
 }
 
+/** Short aliases → real auth email (unique admin name, etc.) */
+const LOGIN_ALIASES: Record<string, string> = {
+  // Unique owner login (not "admin")
+  pronari_phm: 'contact@secondeight.net',
+  pronari: 'contact@secondeight.net',
+}
+
 /**
  * Login with username (shankisti1) or full email.
  * Usernames map to username@pristinamuffins.local
@@ -42,6 +49,10 @@ export async function signInWithUsername(
   usernameOrEmail: string,
   password: string
 ): Promise<{ error: string | null }> {
+  const raw = usernameOrEmail.trim().toLowerCase()
+  if (LOGIN_ALIASES[raw]) {
+    return signInWithEmail(LOGIN_ALIASES[raw]!, password)
+  }
   const email = usernameToEmail(usernameOrEmail)
   return signInWithEmail(email, password)
 }
@@ -57,20 +68,31 @@ export async function signInWithEmail(
       string,
       { role: StaffRole; name: string; password: string }
     > = {
-      admin: { role: 'admin', name: 'Admin', password: 'admin' },
-      shankisti1: { role: 'barista', name: 'Shankist 1', password: 'kafe11' },
-      shankisti2: { role: 'barista', name: 'Shankist 2', password: 'kafe22' },
+      pronari_phm: {
+        role: 'admin',
+        name: 'Pronari',
+        password: 'admin',
+      },
+      shankisti1: {
+        role: 'barista',
+        name: 'Shankist 1',
+        password: 'mulliri7x',
+      },
+      shankisti2: {
+        role: 'barista',
+        name: 'Shankist 2',
+        password: 'espressoQ9',
+      },
       kamerieri1: {
         role: 'waitress',
         name: 'Kamerier 1',
-        password: 'fature11',
+        password: 'tavolina3k',
       },
       kamerieri2: {
         role: 'waitress',
         name: 'Kamerier 2',
-        password: 'fature22',
+        password: 'faturaZ8',
       },
-      worker: { role: 'barista', name: 'Punëtor', password: 'worker' },
     }
     const demo = demos[user]
     if (!demo || demo.password !== password) {

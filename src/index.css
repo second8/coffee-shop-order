@@ -2152,6 +2152,39 @@ code {
   background: #f0f7f2;
 }
 
+.order-card.is-bill.is-in-progress {
+  border-left-color: #c9a227;
+  opacity: 0.95;
+}
+
+.pay-kitchen-wait {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: #9a7010;
+  font-weight: 600;
+}
+
+.pay-kitchen-ready {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: #2d8a4e;
+  font-weight: 600;
+}
+
+.pay-ticket-meta {
+  font-weight: 500;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+}
+
+.pay-disabled-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+  line-height: 1.35;
+  text-align: center;
+}
+
 .dashboard-page.theme-admin .order-card.is-bill {
   background: #1a2228;
   border-color: #3a4a55;

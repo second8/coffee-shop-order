@@ -1,7 +1,6 @@
 /**
  * Create / update staff with simple usernames + roles.
- * Usage (from project root, .env with SUPABASE_SERVICE_ROLE_KEY):
- *   node scripts/setup-staff.mjs
+ * Usage: node scripts/setup-staff.mjs
  */
 import fs from 'fs'
 import path from 'path'
@@ -40,40 +39,43 @@ const headers = {
 
 const DOMAIN = 'pristinamuffins.local'
 
-/** Simple logins for two monitors + admin */
+/**
+ * Unique usernames + distinct passwords (not sequential lookalikes).
+ * Admin uses alias pronari_phm → contact@secondeight.net (password not reset).
+ */
 const staff = [
   {
-    username: 'admin',
+    username: 'pronari_phm',
     email: 'contact@secondeight.net',
-    password: null, // do not reset admin password
+    password: null,
     name: 'Pronari',
     role: 'admin',
   },
   {
     username: 'shankisti1',
     email: `shankisti1@${DOMAIN}`,
-    password: 'kafe11',
+    password: 'mulliri7x',
     name: 'Shankist 1',
     role: 'barista',
   },
   {
     username: 'shankisti2',
     email: `shankisti2@${DOMAIN}`,
-    password: 'kafe22',
+    password: 'espressoQ9',
     name: 'Shankist 2',
     role: 'barista',
   },
   {
     username: 'kamerieri1',
     email: `kamerieri1@${DOMAIN}`,
-    password: 'fature11',
+    password: 'tavolina3k',
     name: 'Kamerier 1',
     role: 'waitress',
   },
   {
     username: 'kamerieri2',
     email: `kamerieri2@${DOMAIN}`,
-    password: 'fature22',
+    password: 'faturaZ8',
     name: 'Kamerier 2',
     role: 'waitress',
   },
@@ -162,16 +164,12 @@ async function upsertProfile(id, s) {
       display_name: s.name,
     }),
   })
-  // upsert via on_conflict
   if (!res.ok) {
-    const res2 = await fetch(
-      `${url}/rest/v1/staff_profiles?id=eq.${id}`,
-      {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ role: s.role, display_name: s.name }),
-      }
-    )
+    const res2 = await fetch(`${url}/rest/v1/staff_profiles?id=eq.${id}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ role: s.role, display_name: s.name }),
+    })
     console.log(
       res2.ok ? 'PROFILE' : 'PROFILE FAIL',
       s.username,
@@ -185,60 +183,13 @@ async function upsertProfile(id, s) {
 const users = await listUsers()
 console.log('Users in project:', users.length)
 
-// Map old worker emails → new accounts still get profiles
 for (const s of staff) {
   const id = await upsertUser(s, users)
   await upsertProfile(id, s)
 }
 
-// Also retarget old workers if they still exist (optional map to barista)
-const legacy = [
-  {
-    email: 'worker1@pristinamuffins.local',
-    role: 'barista',
-    name: 'Shankist (vjetër 1)',
-  },
-  {
-    email: 'worker2@pristinamuffins.local',
-    role: 'barista',
-    name: 'Shankist (vjetër 2)',
-  },
-  {
-    email: 'worker3@pristinamuffins.local',
-    role: 'waitress',
-    name: 'Kamerier (vjetër 3)',
-  },
-  {
-    email: 'worker4@pristinamuffins.local',
-    role: 'waitress',
-    name: 'Kamerier (vjetër 4)',
-  },
-]
-for (const l of legacy) {
-  const u = users.find((x) => (x.email || '').toLowerCase() === l.email)
-  if (!u) continue
-  await fetch(`${url}/auth/v1/admin/users/${u.id}`, {
-    method: 'PUT',
-    headers,
-    body: JSON.stringify({
-      app_metadata: { ...(u.app_metadata || {}), role: l.role },
-      user_metadata: {
-        ...(u.user_metadata || {}),
-        display_name: l.name,
-      },
-    }),
-  })
-  await upsertProfile(u.id, {
-    username: l.email.split('@')[0],
-    email: l.email,
-    name: l.name,
-    role: l.role,
-  })
-  console.log('LEGACY MAP', l.email, '→', l.role)
-}
-
-console.log('\n=== Logins (username + password) ===')
+console.log('\n=== Logins ===')
+console.log('pronari_phm  /  (your existing owner password)')
 for (const s of staff) {
   if (s.password) console.log(`${s.username}  /  ${s.password}  (${s.role})`)
-  else console.log(`${s.username}  /  (your admin password)`)
 }

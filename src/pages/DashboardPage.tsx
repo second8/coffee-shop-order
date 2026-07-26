@@ -36,8 +36,8 @@ import {
   fetchTodayOrders,
   formatDuration,
   isActiveOrder,
+  buildTableBills,
   isKitchenPending,
-  isOpenBill,
   isOrderFullyPaid,
   isSupabaseConfigured,
   lineUnpaidQty,
@@ -51,6 +51,7 @@ import {
   subscribeDemoOrders,
   supabase,
   unpaidTotal,
+  type TableBill,
 } from '../lib/orders'
 import {
   isAdminRole,
@@ -58,7 +59,7 @@ import {
   isWaitressRole,
   roleLabelSq,
 } from '../lib/staffRoles'
-import PayBillModal from '../components/PayBillModal'
+import TablePayModal from '../components/TablePayModal'
 import AdminWipePanel from '../components/AdminWipePanel'
 import { menu } from '../data/menu'
 import { TABLE_COUNT } from '../data/config'
@@ -477,10 +478,9 @@ function ManualOrderModal({
     if (lines.length === 0 || submitting) return
     setSubmitting(true)
     setErr(null)
-    // Staff path: merge into open table bill if exists, else new order
+    // Always new kitchen ticket; kamerier groups by table until Paguaj
     const { data, error } = await createOrder(table, lines, total, note, {
       mode: 'staff',
-      mergeOpenTable: true,
     })
     setSubmitting(false)
     if (error) {
@@ -678,7 +678,7 @@ export default function DashboardPage() {
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState<string | null>(null)
   const [loggingIn, setLoggingIn] = useState(false)
-  const [payOrder, setPayOrder] = useState<Order | null>(null)
+  const [payBill, setPayBill] = useState<TableBill | null>(null)
 
   const [orders, setOrders] = useState<Order[]>([])
   const [archive, setArchive] = useState<Order[]>([])
@@ -1065,14 +1065,9 @@ export default function DashboardPage() {
     )
   }, [activeOrders, isAdmin, isKitchen, profile])
 
-  const openBills = useMemo(
-    () =>
-      activeOrders
-        .filter(isOpenBill)
-        .sort(
-          (a, b) =>
-            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        ),
+  /** Kamerier: one card per table until Paguaj (many kitchen tickets summed). */
+  const tableBills = useMemo(
+    () => buildTableBills(activeOrders),
     [activeOrders]
   )
 
@@ -1348,21 +1343,19 @@ export default function DashboardPage() {
                 <section className="dashboard-section">
                   <h2 className="section-label">
                     {sq.unpaidBills}
-                    <span className="section-count">{openBills.length}</span>
+                    <span className="section-count">{tableBills.length}</span>
                   </h2>
                   {loading ? (
                     <p className="empty-state">{sq.loading}</p>
-                  ) : openBills.length === 0 ? (
+                  ) : tableBills.length === 0 ? (
                     <p className="empty-state">{sq.noUnpaid}</p>
                   ) : (
                     <div className="order-grid">
-                      {openBills.map((order) => (
-                        <OrderCard
-                          key={order.id}
-                          order={order}
-                          variant="bill"
-                          onPay={(o) => setPayOrder(o)}
-                          onCancel={handleCancel}
+                      {tableBills.map((bill) => (
+                        <TableBillCard
+                          key={bill.table}
+                          bill={bill}
+                          onPay={() => setPayBill(bill)}
                         />
                       ))}
                     </div>
@@ -1404,19 +1397,17 @@ export default function DashboardPage() {
                 <section className="dashboard-section">
                   <h2 className="section-label">
                     {sq.unpaidBills}
-                    <span className="section-count">{openBills.length}</span>
+                    <span className="section-count">{tableBills.length}</span>
                   </h2>
-                  {openBills.length === 0 ? (
+                  {tableBills.length === 0 ? (
                     <p className="empty-state">{sq.noUnpaid}</p>
                   ) : (
                     <div className="order-grid">
-                      {openBills.map((order) => (
-                        <OrderCard
-                          key={`b-${order.id}`}
-                          order={order}
-                          variant="bill"
-                          onPay={(o) => setPayOrder(o)}
-                          onCancel={handleCancel}
+                      {tableBills.map((bill) => (
+                        <TableBillCard
+                          key={bill.table}
+                          bill={bill}
+                          onPay={() => setPayBill(bill)}
                         />
                       ))}
                     </div>
@@ -2058,19 +2049,113 @@ export default function DashboardPage() {
         onCreated={handleManualCreated}
       />
 
-      {payOrder && (
-        <PayBillModal
-          order={payOrder}
+      {payBill && (
+        <TablePayModal
+          bill={payBill}
           staffId={profile.id}
-          onClose={() => setPayOrder(null)}
-          onUpdated={(updated) => {
-            setOrders((prev) =>
-              prev.map((o) => (o.id === updated.id ? updated : o))
-            )
-            setPayOrder(isOrderFullyPaid(updated) ? null : updated)
+          onClose={() => setPayBill(null)}
+          onPaid={() => {
+            setPayBill(null)
+            void loadOrders()
           }}
         />
       )}
     </div>
+  )
+}
+
+/** Kamerier: one invoice card per table (sums all kitchen rounds). */
+function TableBillCard({
+  bill,
+  onPay,
+}: {
+  bill: TableBill
+  onPay: () => void
+}) {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 30_000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  // Combined item lines for display
+  const lines = useMemo(() => {
+    const map = new Map<string, { qty: number; unpaid: number; price: number }>()
+    for (const o of bill.orders) {
+      for (const item of o.items) {
+        const prev = map.get(item.name) ?? {
+          qty: 0,
+          unpaid: 0,
+          price: item.price,
+        }
+        prev.qty += item.quantity
+        prev.unpaid += lineUnpaidQty(item)
+        prev.price = item.price
+        map.set(item.name, prev)
+      }
+    }
+    return [...map.entries()].map(([name, v]) => ({ name, ...v }))
+  }, [bill])
+
+  return (
+    <article
+      className={[
+        'order-card is-bill',
+        bill.allReady ? 'is-ready' : '',
+        bill.hasPending ? 'is-in-progress' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      <div className="order-card-top">
+        <div>
+          <h2 className="order-card-table">
+            {sq.table} {bill.table}
+          </h2>
+          <span
+            className={`wait-badge ${bill.allReady ? 'wait-warm' : 'wait-hot'}`}
+          >
+            {bill.hasPending ? sq.inProgress : sq.readyToPay}
+            {' · '}
+            {bill.ticketCount} {sq.rounds}
+          </span>
+        </div>
+        <div className="order-card-meta">
+          <span className="order-card-time">
+            {formatRelativeTime(bill.oldestAt)}
+          </span>
+          <span className="order-card-total">{formatEuro(bill.unpaid)}</span>
+        </div>
+      </div>
+
+      <ul className="order-card-items">
+        {lines.map((line) => (
+          <li key={line.name}>
+            <span className="order-card-qty">{line.qty}×</span>
+            <span>
+              {line.name}
+              {line.unpaid < line.qty && (
+                <em className="item-paid-hint">
+                  {' '}
+                  ({line.qty - line.unpaid} {sq.paidLine.toLowerCase()})
+                </em>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <div className="order-card-actions">
+        <button
+          type="button"
+          className="btn btn-done"
+          disabled={bill.hasPending || bill.unpaid <= 0}
+          onClick={onPay}
+          title={bill.hasPending ? sq.waitKitchenBeforePay : sq.pay}
+        >
+          {bill.hasPending ? sq.inProgress : sq.pay}
+        </button>
+      </div>
+    </article>
   )
 }
