@@ -63,6 +63,7 @@ import {
 import TablePayModal from '../components/TablePayModal'
 import AdminWipePanel from '../components/AdminWipePanel'
 import CancelOrderModal from '../components/CancelOrderModal'
+import StickersPanel from '../components/StickersPanel'
 import { menu } from '../data/menu'
 import { TABLE_COUNT } from '../data/config'
 import {
@@ -81,7 +82,7 @@ import {
 import { sq } from '../i18n/sq'
 import type { CartItem, Order, StaffProfile, StaffSession } from '../types'
 
-type Tab = 'live' | 'sales' | 'speed' | 'team' | 'archive' | 'settings'
+type Tab = 'live' | 'sales' | 'speed' | 'team' | 'archive' | 'stickers' | 'settings'
 type SalesRange = 'today' | '7d' | '30d' | '90d'
 
 const PREVIEW_LIMIT = 5
@@ -1470,6 +1471,7 @@ export default function DashboardPage() {
                     ['speed', sq.performance],
                     ['team', sq.team],
                     ['archive', sq.archiveTab],
+                    ['stickers', sq.stickersTab],
                     ['settings', sq.settingsTab],
                   ] as const)
                 : []),
@@ -2349,28 +2351,18 @@ export default function DashboardPage() {
           </section>
         )}
 
+        {tab === 'stickers' && isAdmin && <StickersPanel />}
+
         {tab === 'settings' && isAdmin && (
-          <>
-            <section className="dashboard-section">
-              <h2 className="section-label">{sq.stickersTab}</h2>
-              <p className="archive-lead">
-                Printoni ngjitëse tavolinash dhe klientësh (zyra). Faqja është
-                e mbrojtur — vetëm admin.
-              </p>
-              <a className="btn btn-primary" href="/qr">
-                {sq.stickersTab}
-              </a>
-            </section>
-            <AdminWipePanel
-              onWiped={() => {
-                setOrders([])
-                setArchive([])
-                setSalesOrders([])
-                setSessions([])
-                void loadOrders()
-              }}
-            />
-          </>
+          <AdminWipePanel
+            onWiped={() => {
+              setOrders([])
+              setArchive([])
+              setSalesOrders([])
+              setSessions([])
+              void loadOrders()
+            }}
+          />
         )}
       </main>
 

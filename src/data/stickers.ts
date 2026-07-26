@@ -118,7 +118,9 @@ export function saveStickersConfig(cfg: StickersConfig): void {
  * Human-readable so staff see the name even if parsing fails.
  * Format: "ZYRË: Client Name" optionally followed by " · user note"
  */
-export const CLIENT_NOTE_PREFIX_RE = /^ZYRË:\s*(.+?)(?:\s+·\s+([\s\S]*))?$/i
+// Accept ZYRE: (ASCII, written by API) and ZYRË: (UI)
+export const CLIENT_NOTE_PREFIX_RE =
+  /^ZYR[EË]:\s*(.+?)(?:\s+[·•]\s+([\s\S]*))?$/i
 export const CLIENT_NOTE_TAG_RE = /\[office:([^\]]{1,48})\]/i
 
 export function encodeClientInNote(
@@ -126,9 +128,9 @@ export function encodeClientInNote(
   note: string | null
 ): string {
   const name = clientName.trim().replace(/\s+/g, ' ')
-  // Prefer plain human-readable form (visible on tickets)
-  if (note) return `ZYRË: ${name} · ${note}`
-  return `ZYRË: ${name}`
+  // ASCII prefix so every layer (API/DB) stores it reliably
+  if (note) return `ZYRE: ${name} · ${note}`
+  return `ZYRE: ${name}`
 }
 
 export function parseClientFromNote(
@@ -164,7 +166,7 @@ export function stripClientTagFromNote(
   }
   const stripped = note
     .replace(CLIENT_NOTE_TAG_RE, '')
-    .replace(/^ZYRË:\s*.+?(?:\s+·\s*)?/i, '')
+    .replace(/^ZYR[EË]:\s*.+?(?:\s+[·•]\s*)?/i, '')
     .trim()
   return stripped || null
 }
@@ -181,11 +183,11 @@ export function resolveClientName(order: {
   const fromNote = parseClientFromNote(order.note)
   if (fromNote) return fromNote
   // Last resort: meta line baked into items (see encodeClientAsMetaItem)
-  const meta = order.items?.find((i) =>
-    typeof i?.name === 'string' && /^ZYRË:\s*.+/i.test(i.name)
+  const meta = order.items?.find(
+    (i) => typeof i?.name === 'string' && /^ZYR[EË]:\s*.+/i.test(i.name)
   )
   if (meta?.name) {
-    const m = meta.name.match(/^ZYRË:\s*(.+)$/i)
+    const m = meta.name.match(/^ZYR[EË]:\s*(.+)$/i)
     if (m?.[1]) {
       const n = m[1].trim().replace(/\s+/g, ' ').slice(0, MAX_CLIENT_NAME_LEN)
       if (n.length >= 2) return n
@@ -196,11 +198,11 @@ export function resolveClientName(order: {
 
 /** Meta cart line so name survives even if note + client_name columns fail. */
 export function clientMetaItemName(clientName: string): string {
-  return `ZYRË: ${clientName.trim().replace(/\s+/g, ' ').slice(0, MAX_CLIENT_NAME_LEN)}`
+  return `ZYRE: ${clientName.trim().replace(/\s+/g, ' ').slice(0, MAX_CLIENT_NAME_LEN)}`
 }
 
 export function isClientMetaItem(name: string): boolean {
-  return /^ZYRË:\s*.+/i.test(name)
+  return /^ZYR[EË]:\s*.+/i.test(name)
 }
 
 export function isClientOrder(order: {

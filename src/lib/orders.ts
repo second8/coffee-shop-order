@@ -339,63 +339,76 @@ function asOrder(row: unknown): Order {
   return normalizeOrderClientFields(row as Order)
 }
 
+/**
+ * Insert order as anon customer.
+ * Important: do NOT use .select() after insert — anon often has INSERT but not SELECT
+ * (RLS), which made inserts fail or strip fields. We set id client-side instead.
+ */
 async function insertOrderDirect(
   row: Record<string, unknown>,
-  cleanNote: string | null
+  _cleanNote: string | null
 ): Promise<{ data: Order | null; error: string | null }> {
   if (!supabase) return { data: null, error: 'Supabase not configured' }
 
-  const cols = await orderSelectCols()
-  let { data, error } = await supabase
-    .from('orders')
-    .insert(row)
-    .select(cols)
-    .single()
+  const id =
+    typeof row.id === 'string' && row.id ? row.id : crypto.randomUUID()
+  const created_at =
+    typeof row.created_at === 'string'
+      ? row.created_at
+      : new Date().toISOString()
 
-  // Retry without note / optional columns if schema lag
-  if (error && cleanNote && error.message.toLowerCase().includes('note')) {
-    const { note: _n, ...withoutNote } = row
-    void _n
-    const retry = await supabase
-      .from('orders')
-      .insert(withoutNote)
-      .select(
-        'id,table_number,items,total,status,created_at,completed_at,completed_by'
-      )
-      .single()
-    data = retry.data as typeof data
-    error = retry.error
-  }
-
-  if (error && error.message.toLowerCase().includes('archived_at')) {
-    const retry = await supabase
-      .from('orders')
-      .insert(row)
-      .select('id,table_number,items,total,status,created_at,completed_at,completed_by')
-      .single()
-    if (!retry.error && retry.data) {
-      return { data: asOrder(retry.data), error: null }
-    }
-    error = retry.error
-  }
-
-  // Schema without client_name — note still has [office:Name] tag
-  if (error && String(error.message).toLowerCase().includes('client_name')) {
-    const { client_name: _c, ...withoutClient } = row
+  const attempts: Record<string, unknown>[] = [
+    { ...row, id, created_at },
+  ]
+  // If client_name column missing
+  if (row.client_name) {
+    const { client_name: _c, ...rest } = attempts[0]!
     void _c
-    const retry = await supabase
-      .from('orders')
-      .insert(withoutClient)
-      .select(cols)
-      .single()
-    if (!retry.error && retry.data) {
-      return { data: asOrder(retry.data), error: null }
+    attempts.push({ ...rest, id, created_at })
+  }
+  // If note column missing — name still in items as ZYRE: meta line
+  {
+    const base = attempts[attempts.length - 1]!
+    if (base.note) {
+      const { note: _n, ...rest } = base
+      void _n
+      attempts.push({ ...rest, id, created_at })
     }
-    error = retry.error
   }
 
-  if (error) return { data: null, error: error.message }
-  return { data: asOrder(data), error: null }
+  let lastError: string | null = null
+  for (const payload of attempts) {
+    const { error } = await supabase.from('orders').insert(payload)
+    if (!error) {
+      const order = asOrder({
+        id,
+        table_number: Number(payload.table_number),
+        items: payload.items as CartItem[],
+        total: Number(payload.total),
+        status: 'pending',
+        created_at,
+        completed_at: null,
+        completed_by: null,
+        archived_at: null,
+        note: (payload.note as string | undefined) ?? null,
+        client_name: (payload.client_name as string | undefined) ?? null,
+      })
+      return { data: order, error: null }
+    }
+    lastError = error.message
+    // Only retry on missing-column style errors
+    const msg = error.message.toLowerCase()
+    if (
+      !msg.includes('client_name') &&
+      !msg.includes('note') &&
+      !msg.includes('column') &&
+      !msg.includes('schema cache')
+    ) {
+      break
+    }
+  }
+
+  return { data: null, error: lastError || 'Insert failed' }
 }
 
 export async function createOrder(
@@ -447,7 +460,8 @@ export async function createOrder(
     return insertOrderDirect(row, cleanNote)
   }
 
-  // Customer: try serverless API once. If it succeeds, do NOT insert again.
+  // Customer orders MUST go through serverless API (service role).
+  // Anon inserts often cannot RETURNING rows under RLS — API is the real path.
   try {
     const apiRes = await fetch('/api/create-order', {
       method: 'POST',
@@ -459,30 +473,25 @@ export async function createOrder(
         client_name: destClient,
       }),
     })
-    if (apiRes.ok) {
-      const body = (await apiRes.json()) as { data?: Order }
-      if (body.data?.id) {
-        return { data: asOrder(body.data), error: null }
-      }
-      // Never invent IDs — would desync with realtime / double cards
+    const text = await apiRes.text()
+    let body: { data?: Order; error?: string } = {}
+    try {
+      body = text ? (JSON.parse(text) as { data?: Order; error?: string }) : {}
+    } catch {
+      // HTML / crash page
+    }
+    if (apiRes.ok && body.data?.id) {
+      return { data: asOrder(body.data), error: null }
+    }
+    if (apiRes.status >= 400 && apiRes.status < 500) {
       return {
         data: null,
-        error: 'Porosia u dërgua por mungon përgjigja. Rifresko panelin.',
+        error: body.error || 'Porosia dështoi',
       }
     }
-    // 4xx from API = validation; don't fall through (would create second row on 5xx race)
-    if (apiRes.status >= 400 && apiRes.status < 500 && apiRes.status !== 404) {
-      let msg = 'Porosia dështoi'
-      try {
-        const body = (await apiRes.json()) as { error?: string }
-        if (body.error) msg = body.error
-      } catch {
-        // ignore
-      }
-      return { data: null, error: msg }
-    }
+    // 5xx / network: one direct insert attempt (may fail under RLS)
   } catch {
-    // Network / no API route (local dev) → direct insert once
+    // fall through
   }
 
   return insertOrderDirect(row, cleanNote)

@@ -1,5 +1,12 @@
 /* Café Sol — Geist, warm cream, yellow highlights */
 
+/* Stickers panel embedded in admin dashboard */
+.stickers-embedded {
+  min-height: auto;
+  padding: 0 0 2rem;
+  background: transparent;
+}
+
 @font-face {
   font-family: 'Geist';
   src: url('../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2') format('woff2');
