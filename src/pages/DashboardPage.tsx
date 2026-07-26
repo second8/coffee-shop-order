@@ -1143,24 +1143,6 @@ export default function DashboardPage() {
     [activeOrders]
   )
 
-  /** Kitchen ready, still unpaid */
-  const readyUnpaid = useMemo(
-    () =>
-      activeOrders
-        .filter(
-          (o) =>
-            o.status === 'done' &&
-            !isOrderFullyPaid(o) &&
-            !o.archived_at
-        )
-        .sort(
-          (a, b) =>
-            new Date(b.completed_at || b.created_at).getTime() -
-            new Date(a.completed_at || a.created_at).getTime()
-        ),
-    [activeOrders]
-  )
-
   const paidToday = useMemo(
     () =>
       activeOrders
@@ -1547,6 +1529,7 @@ export default function DashboardPage() {
                       {tableBillsReady.length}
                     </span>
                   </h2>
+                  <p className="section-hint">{sq.sectionReadyHint}</p>
                   {tableBillsReady.length === 0 ? (
                     <p className="empty-state">{sq.noUnpaid}</p>
                   ) : (
@@ -1560,18 +1543,6 @@ export default function DashboardPage() {
                       ))}
                     </div>
                   )}
-                  {readyUnpaid.length > 0 && (
-                    <div className="order-list admin-ticket-list">
-                      {readyUnpaid.map((order) => (
-                        <OrderCard
-                          key={`ru-${order.id}`}
-                          order={order}
-                          variant="done"
-                          staffName={staffLabel(order.completed_by)}
-                        />
-                      ))}
-                    </div>
-                  )}
                 </section>
 
                 <section className="dashboard-section status-section status-waiting">
@@ -1581,6 +1552,7 @@ export default function DashboardPage() {
                       {tableBillsInKitchen.length}
                     </span>
                   </h2>
+                  <p className="section-hint">{sq.sectionMixedHint}</p>
                   {tableBillsInKitchen.length === 0 ? (
                     <p className="empty-state">—</p>
                   ) : (

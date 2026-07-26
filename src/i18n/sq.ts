@@ -127,12 +127,15 @@ export const sq = {
   personPayOk: 'U regjistrua — vazhdo me personin tjetër',
   payAllReady: 'Paguaj të gjitha gati',
   idleLoggedOut: 'U shkyçet automatikisht pas 1 ore pa aktivitet.',
-  /** Admin board sections */
-  sectionOrdering: 'Në porosi (shanku)',
-  sectionReadyUnpaid: 'Gati — presin pagesë',
-  sectionWaitingKitchen: 'Fatura hapur — ende në shank',
-  sectionPaid: 'Të paguara',
-  sectionCancelled: 'Të anuluara',
+  /** Admin board sections — distinct stages */
+  sectionOrdering: '1. Në shank',
+  sectionReadyUnpaid: '2. Gati për pagesë',
+  sectionWaitingKitchen: '3. Pjesërisht gati (ende në shank)',
+  sectionPaid: '4. Të paguara',
+  sectionCancelled: '5. Të anuluara',
+  sectionReadyHint: 'Të gjitha raundet e tavolinës janë gati — mund të paguhet e plotë.',
+  sectionMixedHint:
+    'Disa raunde gati, disa ende në shank. Mund të arkëtohen vetëm raundet gati.',
   paidAt: 'Paguar',
   paidBy: 'Arkëtoi',
   paymentHistory: 'Historia e pagesave',
