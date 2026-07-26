@@ -1,178 +1,184 @@
-# Session handoff — 2026-07-26
+# Session handoff — 2026-07-26 (evening)
 
-**Continue from here tomorrow.**
+**Continue from here next session (any PC).**
 
 | | |
 |--|--|
-| **Folder** | `C:\Users\Rimma\coffee-shop-order` |
 | **Live** | https://coffee-shop-order-olive.vercel.app/ |
 | **GitHub** | https://github.com/second8/coffee-shop-order |
 | **Branch** | `main` |
-| **HEAD (end of day)** | `982b114` — pre-Swiss design restored + redeploy |
-| **Save point tag** | `checkpoint-stable-v1` |
-| **Supabase** | `xdqigvsgmutjimzddwqi` |
+| **HEAD** | `6ed1e21` — create-order API hardened; stickers admin-only; client names fixed |
+| **Save point tag** | `checkpoint-stable-v1` (older; current main is ahead) |
+| **Supabase project** | `xdqigvsgmutjimzddwqi` |
 
 ---
 
-## Where we left off
+## How to continue on a **different PC** tomorrow
 
-### Product is live and usable for the shop
-Two-monitor ops: **shankist** (kitchen) + **kamerier** (bills/pay) + **pronari** (full admin).
+You do **not** need this machine. Everything important is on GitHub + Vercel + Supabase.
 
-**Design:** Original warm café UI (Instrument Serif + Inter, cream, rounded cards).  
-A full Swiss redesign was tried late day → **reverted**. Do **not** re-apply Swiss without a new explicit request.
-
-### Save / restore
-- Doc: **`CHECKPOINT.md`**
-- Tag: **`checkpoint-stable-v1`**
-- If design/code messes up:
+### 1. Get the code
 
 ```powershell
-cd C:\Users\Rimma\coffee-shop-order
-git fetch origin
-git reset --hard checkpoint-stable-v1
-git push origin main --force
+git clone https://github.com/second8/coffee-shop-order.git
+cd coffee-shop-order
+npm install
 ```
+
+Or if the folder already exists:
+
+```powershell
+cd path\to\coffee-shop-order
+git pull origin main
+npm install
+```
+
+### 2. Local `.env` (required for dev / scripts)
+
+Create `.env` in the project root (never commit it). Copy from your password manager / Vercel / Supabase dashboard:
+
+```env
+VITE_SUPABASE_URL=https://xdqigvsgmutjimzddwqi.supabase.co
+VITE_SUPABASE_ANON_KEY=...          # Supabase → Settings → API → anon public
+SUPABASE_SERVICE_ROLE_KEY=...       # Supabase → Settings → API → service_role (secret)
+SUPABASE_URL=https://xdqigvsgmutjimzddwqi.supabase.co
+# optional for SQL scripts:
+# DATABASE_URL=...
+# SUPABASE_DB_PASSWORD=...
+```
+
+Same keys must already be set in **Vercel → Project → Settings → Environment Variables** for the live site.
+
+### 3. Run locally
+
+```powershell
+npm run dev
+```
+
+- Customer: http://localhost:5173/order?table=3  
+- Staff: http://localhost:5173/dashboard  
+- Stickers: only after admin login → tab **Ngjitëset QR**
+
+### 4. Deploy (same as always)
+
+```powershell
+git add .
+git commit -m "describe change"
+git push origin main
+```
+
+Vercel auto-deploys `main` → live URL above. No need to “upload” from the PC.
+
+### 5. Open in Grok / any AI agent
+
+- Point the agent at the cloned folder  
+- Say: **“Continue from STATUS-TODAY.md”**  
+- Agent should read this file + `CHECKPOINT.md` + `WORKERS.md`
 
 ---
 
-## What we built / fixed today (summary)
+## Staff logins
 
-### Roles & logins
 | Role | Username | Password | Screen |
 |------|----------|----------|--------|
-| Pronari | `pronari_phm` | *your owner password* | Everything |
+| Pronari (admin) | `pronari_phm` | *your owner password* | Full admin + stickers |
 | Shankist 1 | `shankisti1` | `mulliri7x` | Kitchen |
 | Shankist 2 | `shankisti2` | `espressoQ9` | Kitchen |
 | Kamerier 1 | `kamerieri1` | `tavolina3k` | Bills / pay |
 | Kamerier 2 | `kamerieri2` | `faturaZ8` | Bills / pay |
 
-- Login is **username only** (no long email). Placeholder is just “Përdoruesi”.
-- Legacy `worker1`–`worker4` accounts **deleted** from Supabase (only 5 accounts left).
-- Details also in **`WORKERS.md`**.
-
-### Flow (important)
-1. Customer QR or **manual order** → new **kitchen ticket** (shankist).
-2. Shankist presses **Gati**.
-3. Table appears on **kamerier** (only after at least one Gati).
-4. More orders same table = more **rounds** (newest on top). Ready = full opacity; still cooking = dimmed.
-5. Kamerier pays **ready** amount only; pending stays for later.
-6. **Paguaj** (person / equal / full ready) → when visit settled, next orders start fresh.
-
-### Kamerier pay UX
-- Per person (+/− items), stays on screen for next person.
-- Equal split by N people.
-- **Already paid** list visible after partial pay (e.g. 1 of 10 espressos shows as paid).
-- Totals: already paid / remaining / this payment.
-
-### Cancel
-- Staff must give a **reason** (chips: left / wrong / double / other + free text).
-- Stored as `cancel_reason`.
-
-### Customer phone
-- Optional **note** on review.
-- Submit is **in the scroll** (not fixed under keyboard) so notes don’t block send.
-- Double-submit lock + better errors.
-
-### Admin panel stages
-1. **Porosi të reja** — in kitchen  
-2. **Gati për shërbim** — ready tickets  
-3. **Presin pagesë** — open table bills  
-4. **Të kompletuara (paguar)** — paid history  
-5. **Të anuluara** — with reason  
-
-Also: sales, speed, team, archive, **Cilësimet** wipe (password + phrase `FSHI TE GJITHA`).
-
-### Infra / quality (from audit)
-- Error boundary (no full white crash UI if React throws).
-- `shared/menu.json` single menu for app + API.
-- Never invent fake order IDs after create.
-- Realtime reconnect banner + reload.
-- Admin-only hard delete of orders (SQL applied).
-- RLS recursion fix applied earlier (`FIX_RLS_RECURSION.sql`).
-- Idle logout ~1 hour.
-- Soft cool/warm tints for shankist/kamerier (light UI only).
-- Home page: public scan message; staff link de-emphasized (no “table 3” demo CTA).
-
-### Design experiment (reverted)
-- Swiss / Inter-only redesign was **rolled back** to checkpoint.
-- Live should match **warm Instrument Serif + cream** look after hard refresh.
+Login = **username only** (no email). Details also in `WORKERS.md`.
 
 ---
 
-## Supabase SQL that should already be applied
+## What we did this session (summary)
 
-If something is missing, re-run in SQL Editor (safe-ish):
+### Design
+- **Geist** body font, regular, letter-spacing **-3%**
+- Text **#332D29**, background **#F3EFE3**, highlight **#FFA425**
+- Category titles (Coffee, Desserts…) **Instrument Serif**, larger/bolder
+- Menu listings **black**, slightly larger type
+- Shop logo / title **Instrument Serif**
+- Table number **hidden** on customer UI (still in QR URL for kitchen)
 
-1. `supabase/schema.sql`
-2. `supabase/MIGRATION_V2.sql` + `supabase/FIX_RLS_RECURSION.sql`
-3. `supabase/MIGRATION_V3_ROLES_PAY.sql` — roles, `paid_at`, `note`, `cancel_reason`, `payment_events`
-4. `supabase/FIX_ADMIN_DELETE.sql` — admin-only delete
+### Stickers / QR (important)
+- **Not public.** `/qr` redirects to `/dashboard`
+- Only **pronari** → dashboard tab **“Ngjitëset QR”**
+- Add **table** count + **named client** stickers (“Shto ngjitëse”)
+- Printed stickers **do not show the URL**
+- Client stickers → `/order?client=NameYouTyped`
+- Client orders: **min €5**, orange gradient, badge **ZYRË**, title = **exact sticker name**
+- Gradient stays for pending / ready / paid / completed
 
-Local secrets (do **not** commit): `.env` with  
-`VITE_SUPABASE_*`, `SUPABASE_SERVICE_ROLE_KEY`, optional `SUPABASE_DB_PASSWORD`.
+### Bugfixes (client name was “ZYRË / Klient”)
+Root cause: customer insert used `.select()` after insert; anon has INSERT but not SELECT under RLS → saves failed / fields dropped.
 
-**Security note:** service role was used in chat earlier — still worth **rotating** in Supabase + Vercel when convenient.
+**Fixed:**
+- Insert with explicit `id`, **no** `.select()` for customer path  
+- Name stored in: `client_name` column + note `ZYRE: Name` + items meta line  
+- DB column `client_name` applied  
+- create-order API hardened; `vercel.json` excludes `/api/*` from SPA rewrite  
 
----
-
-## How to run / deploy tomorrow
-
-```powershell
-cd C:\Users\Rimma\coffee-shop-order
-npm run dev          # local
-# after code changes:
-git add .
-git commit -m "describe change"
-git push origin main # Vercel auto-deploys
-```
-
-Local: http://localhost:5173  
-Customer: `/order?table=3`  
-Staff: `/dashboard`  
-QR print: `/qr`
-
----
-
-## Good next tasks (pick when ready)
-
-- [ ] Rotate Supabase service_role key + update Vercel env  
-- [ ] Print / stick QR codes for 30 tables; shop demo with partners  
-- [ ] Menu admin UI (edit items without code) — menu lives in `shared/menu.json`  
-- [ ] WiFi / network lock for ordering  
-- [ ] Custom domain  
-- [ ] Push notifications for kitchen  
-- [ ] Optional: new design pass (lighter than Swiss; keep checkpoint first)  
-- [ ] New git tag `checkpoint-stable-v2` after next stable day  
-
----
-
-## Known / watch
-
-| Issue | Notes |
-|-------|--------|
-| Browser cache after deploy | Hard refresh Ctrl+Shift+R or incognito |
-| Design-refs folder | Local only `design-refs/` (Pinterest downloads) — not required; can delete |
-| DB data | Git restore ≠ order restore; export CSV before big wipes |
-| Admin wipe | Destructive; needs password + `FSHI TE GJITHA` |
-
----
-
-## Key files
-
+### Files that matter
 | Path | Purpose |
 |------|---------|
-| `CHECKPOINT.md` | Restore point instructions |
-| `WORKERS.md` | Logins |
 | `STATUS-TODAY.md` | This handoff |
-| `shared/menu.json` | Menu + prices (app + API) |
-| `src/pages/DashboardPage.tsx` | Staff boards |
-| `src/pages/OrderPage.tsx` | Customer menu |
-| `src/components/TablePayModal.tsx` | Pay / split |
-| `src/lib/orders.ts` | Orders, bills, pay, wipe |
-| `src/lib/auth.ts` | Login usernames → email |
-| `supabase/*.sql` | Schema / migrations |
+| `CHECKPOINT.md` | Older restore / logins / migrations list |
+| `WORKERS.md` | Staff logins |
+| `src/components/StickersPanel.tsx` | Admin stickers UI |
+| `src/data/stickers.ts` | Client name helpers, QR URLs, local list |
+| `src/pages/OrderPage.tsx` | Customer menu + client dest |
+| `src/pages/DashboardPage.tsx` | Staff boards + stickers tab |
+| `src/lib/orders.ts` | createOrder, bills, client normalize |
+| `api/create-order.ts` | Server insert (service role) |
+| `supabase/MIGRATION_V4_CLIENT_ORDERS.sql` | `client_name` column |
+| `shared/menu.json` | Menu + prices |
 
 ---
 
-*End of day 2026-07-26. Resume with this file + cheatsheet/logins above.*
+## ⚠️ Stickers list = browser storage (PC-specific)
+
+Custom client stickers you add under **Ngjitëset QR** are saved in **that browser’s localStorage** (`phm-stickers-v1`), not yet in Supabase.
+
+| What | Same on new PC? |
+|------|------------------|
+| Live app code | Yes (GitHub → Vercel) |
+| Orders / staff / menu | Yes (Supabase) |
+| Staff logins | Yes |
+| **List of named client stickers you added** | **No** — re-add names on the new browser, or use the same browser profile |
+
+**Printed QR codes still work** on any PC (name is inside the QR URL). Only the **admin list** for reprinting needs re-adding on a new machine until we sync stickers to the DB.
+
+Optional next step: store stickers in Supabase so all devices share one list.
+
+---
+
+## Good next tasks
+
+- [ ] Confirm a **new** client-sticker order shows the **exact name** on shank + kamerier  
+- [ ] Sync stickers to Supabase (multi-PC admin list)  
+- [ ] Rotate service_role if it was ever pasted in chat  
+- [ ] Print table + client stickers for the shop  
+- [ ] Menu admin UI (`shared/menu.json`)  
+- [ ] Tag `checkpoint-stable-v2` when stable  
+
+---
+
+## Quick health check
+
+- [ ] `/dashboard` login works for shankist / kamerier / pronari  
+- [ ] Phone order table 3 → appears on shankist  
+- [ ] Gati → appears on kamerier  
+- [ ] **Ngjitëset QR** only visible after admin login (not public `/qr`)  
+- [ ] Client sticker order → title = sticker name + orange card  
+- [ ] Vercel deploy green on `main`  
+
+---
+
+## Agent / human one-liner for next chat
+
+> Open `coffee-shop-order`, pull `main`, read `STATUS-TODAY.md`. Live is Vercel; stickers are admin tab only; client orders must show the sticker name; stickers list is localStorage until we put it in Supabase.
+
+---
+
+*End of session 2026-07-26 evening. Resume with this file + `git pull origin main`.*
