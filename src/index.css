@@ -2390,33 +2390,226 @@ code {
 }
 
 .status-section {
-  padding-top: 0.25rem;
-  border-top: 3px solid transparent;
-  margin-top: 0.5rem;
+  padding: 0.85rem 0.75rem 0.5rem;
+  border-radius: 14px;
+  margin-top: 0.85rem;
+  border: 1px solid transparent;
 }
 
 .status-ordering {
-  border-top-color: #c47a3a;
+  border-color: #5b7fa6;
+  background: rgba(91, 127, 166, 0.08);
+  border-left: 4px solid #5b7fa6;
 }
 
 .status-ready {
-  border-top-color: #5a9e6f;
+  border-color: #d4a017;
+  background: rgba(212, 160, 23, 0.1);
+  border-left: 4px solid #d4a017;
 }
 
 .status-waiting {
-  border-top-color: #c9a227;
+  border-color: #8b6bb5;
+  background: rgba(139, 107, 181, 0.1);
+  border-left: 4px solid #8b6bb5;
 }
 
 .status-paid {
-  border-top-color: #2d8a4e;
+  border-color: #3d9b6a;
+  background: rgba(61, 155, 106, 0.08);
+  border-left: 4px solid #3d9b6a;
 }
 
 .status-cancelled {
-  border-top-color: #c47a72;
+  border-color: #c47a72;
+  background: rgba(196, 122, 114, 0.08);
+  border-left: 4px solid #c47a72;
 }
 
 .admin-ticket-list {
   margin-top: 0.75rem;
+}
+
+/* —— Shankist: cold cool tones —— */
+.dashboard-page.theme-barista {
+  --paper: #eef3f7;
+  --line: #c5d0dc;
+  --ink: #1a2836;
+  --ink-muted: #5a6d80;
+  --terracotta: #4a7a9b;
+  --terracotta-deep: #2f5f7d;
+  background: linear-gradient(180deg, #d8e4ee 0%, #eef3f7 40%, #f4f7fa 100%);
+  min-height: 100vh;
+  color: var(--ink);
+}
+
+.dashboard-page.theme-barista .dashboard-header {
+  background: #1e3a4f;
+  color: #e8f0f6;
+  border-bottom: 1px solid #2a4a62;
+}
+
+.dashboard-page.theme-barista .dashboard-header h1,
+.dashboard-page.theme-barista .stat-value {
+  color: #f0f6fa;
+}
+
+.dashboard-page.theme-barista .stat-label {
+  color: #9bb4c8;
+}
+
+.dashboard-page.theme-barista .order-card {
+  background: #f7fafc;
+  border-color: #b8c9d8;
+  border-left-color: #3d7a9e;
+  box-shadow: 0 2px 10px rgba(30, 58, 79, 0.08);
+}
+
+.dashboard-page.theme-barista .btn-done {
+  background: #2f6f8f;
+  color: #fff;
+}
+
+.dashboard-page.theme-barista .pending-pill {
+  background: #2a4a62;
+  color: #b8d4e8;
+}
+
+.dashboard-page.theme-barista .logout-btn,
+.dashboard-page.theme-barista .sound-toggle {
+  border-color: #3d5a72;
+  color: #d0e0ec;
+}
+
+/* —— Kamerier: warm tones —— */
+.dashboard-page.theme-waitress {
+  --paper: #faf6f0;
+  --line: #e0d0bc;
+  --ink: #2a2018;
+  --ink-muted: #7a6555;
+  --terracotta: #c47840;
+  --terracotta-deep: #9a5528;
+  background: linear-gradient(180deg, #f3e4d2 0%, #faf6f0 45%, #fbf8f4 100%);
+  min-height: 100vh;
+  color: var(--ink);
+}
+
+.dashboard-page.theme-waitress .dashboard-header {
+  background: #3d2a1c;
+  color: #f8efe4;
+  border-bottom: 1px solid #5a4030;
+}
+
+.dashboard-page.theme-waitress .dashboard-header h1,
+.dashboard-page.theme-waitress .stat-value {
+  color: #fff8f0;
+}
+
+.dashboard-page.theme-waitress .stat-label {
+  color: #c4a888;
+}
+
+.dashboard-page.theme-waitress .order-card.is-bill {
+  background: #fffaf4;
+  border-color: #e5d0b8;
+  border-left-color: #c47840;
+}
+
+.dashboard-page.theme-waitress .order-card.is-bill.is-ready {
+  border-left-color: #b8860b;
+  background: #fff8e8;
+}
+
+.dashboard-page.theme-waitress .btn-done {
+  background: #c47840;
+  color: #fff;
+}
+
+.dashboard-page.theme-waitress .pending-pill {
+  background: #5a4030;
+  color: #f0d8b8;
+}
+
+.dashboard-page.theme-waitress .logout-btn,
+.dashboard-page.theme-waitress .sound-toggle {
+  border-color: #6a4a35;
+  color: #f0e0d0;
+}
+
+.dashboard-page.theme-waitress .manual-open-btn {
+  background: #c47840;
+}
+
+/* Rounds on kamerier bill card */
+.round-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.round-block {
+  padding: 0.55rem 0.15rem 0.65rem;
+  border-top: 1px dashed var(--line);
+}
+
+.round-block:first-child {
+  border-top: none;
+  padding-top: 0.15rem;
+}
+
+.round-block.is-ready {
+  opacity: 1;
+}
+
+.round-block.is-pending {
+  opacity: 0.48;
+  filter: grayscale(0.15);
+}
+
+.round-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.65rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.round-status.ok {
+  color: #8a6a10;
+  background: rgba(212, 160, 23, 0.18);
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+}
+
+.round-status.wait {
+  color: #5a6d80;
+  background: rgba(90, 109, 128, 0.15);
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+}
+
+.round-time {
+  margin-left: auto;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.round-note {
+  margin-top: 0.35rem;
+}
+
+.pay-ok-flash {
+  margin: 0.45rem 0 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #2d8a4e;
 }
 
 .dashboard-page.theme-admin .order-card.is-bill {

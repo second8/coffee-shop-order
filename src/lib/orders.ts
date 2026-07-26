@@ -694,21 +694,36 @@ export async function markPartialPay(
 /** One open invoice per table for kamerier (many kitchen tickets summed). */
 export type TableBill = {
   table: number
+  /** Newest first — rounds / kitchen tickets */
   orders: Order[]
-  /** Sum of unpaid remaining */
+  /** Unpaid amount on READY (gati) tickets only — what kamerier can take now */
   unpaid: number
-  /** Full ticket totals (including already partial-paid lines) */
+  /** Unpaid still cooking */
+  pendingUnpaid: number
+  /** Full ticket totals */
   gross: number
-  /** Any ticket still pending in kitchen */
   hasPending: boolean
-  /** Every open ticket is kitchen-done */
   allReady: boolean
-  /** Count of kitchen tickets on this open visit */
+  /** At least one gati ticket (table visible to kamerier) */
+  hasReady: boolean
   ticketCount: number
+  readyCount: number
   oldestAt: string
+  newestAt: string
 }
 
-export function buildTableBills(orders: Order[]): TableBill[] {
+export type BuildTableBillsOpts = {
+  /**
+   * Kamerier: only tables that already have ≥1 Gati (ready) unpaid ticket.
+   * Pending-only tables stay on shankist board only.
+   */
+  requireReady?: boolean
+}
+
+export function buildTableBills(
+  orders: Order[],
+  opts?: BuildTableBillsOpts
+): TableBill[] {
   const map = new Map<number, Order[]>()
   for (const o of orders) {
     if (!isOpenBill(o)) continue
@@ -718,33 +733,45 @@ export function buildTableBills(orders: Order[]): TableBill[] {
   }
   const bills: TableBill[] = []
   for (const [table, list] of map) {
+    // Newest rounds on top
     list.sort(
       (a, b) =>
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     )
-    const unpaid = list.reduce((s, o) => s + unpaidTotal(o), 0)
+    const ready = list.filter((o) => o.status === 'done')
+    const pending = list.filter((o) => o.status === 'pending')
+    if (opts?.requireReady && ready.length === 0) continue
+
+    const unpaid = ready.reduce((s, o) => s + unpaidTotal(o), 0)
+    const pendingUnpaid = pending.reduce((s, o) => s + unpaidTotal(o), 0)
     const gross = list.reduce((s, o) => s + Number(o.total), 0)
-    const hasPending = list.some((o) => o.status === 'pending')
-    const allReady = list.every((o) => o.status === 'done')
     bills.push({
       table,
       orders: list,
       unpaid,
+      pendingUnpaid,
       gross,
-      hasPending,
-      allReady,
+      hasPending: pending.length > 0,
+      allReady: pending.length === 0 && ready.length > 0,
+      hasReady: ready.length > 0,
       ticketCount: list.length,
-      oldestAt: list[0]!.created_at,
+      readyCount: ready.length,
+      oldestAt: list[list.length - 1]!.created_at,
+      newestAt: list[0]!.created_at,
     })
   }
+  // Tables with newest activity first
   return bills.sort(
     (a, b) =>
-      new Date(a.oldestAt).getTime() - new Date(b.oldestAt).getTime()
+      new Date(b.newestAt).getTime() - new Date(a.newestAt).getTime()
   )
 }
 
-/** Flatten unpaid lines across tickets for split UI. */
-export function tableBillLines(bill: TableBill): {
+/** Flatten unpaid lines — only Gati tickets (kamerier can collect now). */
+export function tableBillLines(
+  bill: TableBill,
+  opts?: { readyOnly?: boolean }
+): {
   key: string
   orderId: string
   name: string
@@ -752,7 +779,9 @@ export function tableBillLines(bill: TableBill): {
   unpaid: number
   quantity: number
   paid_quantity: number
+  ready: boolean
 }[] {
+  const readyOnly = opts?.readyOnly !== false
   const lines: {
     key: string
     orderId: string
@@ -761,8 +790,11 @@ export function tableBillLines(bill: TableBill): {
     unpaid: number
     quantity: number
     paid_quantity: number
+    ready: boolean
   }[] = []
   for (const o of bill.orders) {
+    const ready = o.status === 'done'
+    if (readyOnly && !ready) continue
     for (const item of o.items) {
       const unpaid = lineUnpaidQty(item)
       if (unpaid <= 0) continue
@@ -774,13 +806,14 @@ export function tableBillLines(bill: TableBill): {
         unpaid,
         quantity: item.quantity,
         paid_quantity: linePaidQty(item),
+        ready,
       })
     }
   }
   return lines
 }
 
-/** Mark every open ticket for a table as fully paid. */
+/** Mark ready (gati) open tickets for a table as fully paid. */
 export async function markTablePaid(
   tableNumber: number,
   openOrders: Order[],
@@ -790,6 +823,8 @@ export async function markTablePaid(
   for (const o of openOrders) {
     if (o.table_number !== tableNumber) continue
     if (!isOpenBill(o)) continue
+    // Only settle kitchen-ready tickets; pending stay for next round
+    if (o.status !== 'done') continue
     const { error } = await markOrderPaid(o.id, staffUserId)
     if (error) return { error, paidCount }
     paidCount += 1
@@ -1205,12 +1240,17 @@ export async function fetchStaffNameMap(): Promise<Record<string, string>> {
   let workerIdx = 0
   for (const row of data) {
     const role = row.role as string
-    if (role === 'worker') workerIdx += 1
-    map[row.id as string] = friendlyStaffName(
+    if (role === 'worker' || role === 'barista') workerIdx += 1
+    let name = friendlyStaffName(
       row.display_name as string | null,
       role,
-      role === 'worker' ? workerIdx : undefined
+      role === 'worker' || role === 'barista' ? workerIdx : undefined
     )
+    // Hide legacy “vjetër” labels
+    if (/vjetër/i.test(name)) {
+      name = role === 'waitress' ? `Kamerier ${workerIdx}` : `Shankist ${workerIdx}`
+    }
+    map[row.id as string] = name
   }
   return map
 }

@@ -867,10 +867,18 @@ export default function DashboardPage() {
         profile.id
     }
     if (profilesRes.data) {
-      for (const p of profilesRes.data) {
-        if (p.display_name) map[p.id] = p.display_name
-      }
-      setStaffList(profilesRes.data)
+      const cleaned = profilesRes.data.map((p) => {
+        let name = p.display_name
+        if (name && /vjetër/i.test(name)) {
+          name =
+            p.role === 'waitress' || p.role === 'worker'
+              ? name.replace(/\(vjetër[^)]*\)/i, '').trim() || 'Staf'
+              : name.replace(/\(vjetër[^)]*\)/i, '').trim() || 'Staf'
+        }
+        if (name) map[p.id] = name
+        return { ...p, display_name: name }
+      })
+      setStaffList(cleaned)
     }
     setNameMap(map)
   }, [profile])
@@ -1109,9 +1117,18 @@ export default function DashboardPage() {
     )
   }, [activeOrders, isAdmin, isKitchen, profile])
 
-  /** Kamerier: one card per table until Paguaj (many kitchen tickets summed). */
+  /**
+   * Kamerier bills: table appears only after first Gati.
+   * Pending rounds still listed dimmed on that table for context.
+   */
   const tableBills = useMemo(
-    () => buildTableBills(activeOrders),
+    () => buildTableBills(activeOrders, { requireReady: true }),
+    [activeOrders]
+  )
+
+  /** Admin also sees pending-only tables in kitchen section; full open bills: */
+  const allTableBills = useMemo(
+    () => buildTableBills(activeOrders, { requireReady: false }),
     [activeOrders]
   )
 
@@ -1158,12 +1175,12 @@ export default function DashboardPage() {
   )
 
   const tableBillsInKitchen = useMemo(
-    () => tableBills.filter((b) => b.hasPending),
-    [tableBills]
+    () => allTableBills.filter((b) => b.hasPending && b.hasReady),
+    [allTableBills]
   )
   const tableBillsReady = useMemo(
-    () => tableBills.filter((b) => b.allReady),
-    [tableBills]
+    () => allTableBills.filter((b) => b.allReady),
+    [allTableBills]
   )
 
   const dailyRevenue = useMemo(
@@ -1273,10 +1290,62 @@ export default function DashboardPage() {
     )
   }
 
+  // Auto log-out after 1 hour without interaction
+  useEffect(() => {
+    if (!profile) return
+    const IDLE_MS = 60 * 60 * 1000
+    let last = Date.now()
+    const bump = () => {
+      last = Date.now()
+    }
+    const events = [
+      'pointerdown',
+      'keydown',
+      'touchstart',
+      'scroll',
+    ] as const
+    for (const e of events) window.addEventListener(e, bump, { passive: true })
+    const id = window.setInterval(() => {
+      if (Date.now() - last >= IDLE_MS) {
+        void handleLogout()
+      }
+    }, 30_000)
+    return () => {
+      for (const e of events) window.removeEventListener(e, bump)
+      window.clearInterval(id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id])
+
+  // Keep pay modal bill in sync after partial payments (don't close)
+  useEffect(() => {
+    if (!payBill) return
+    const next = tableBills.find((b) => b.table === payBill.table)
+    if (!next) {
+      // Table fully settled or no ready tickets left
+      if (payBill.unpaid > 0 || payBill.hasPending) {
+        // maybe only pending left — close collect UI
+      }
+      setPayBill(null)
+      return
+    }
+    if (
+      next.unpaid !== payBill.unpaid ||
+      next.ticketCount !== payBill.ticketCount ||
+      next.readyCount !== payBill.readyCount
+    ) {
+      setPayBill(next)
+    }
+  }, [tableBills, payBill])
+
+  const themeClass = isAdmin
+    ? 'theme-admin'
+    : isWaitress
+      ? 'theme-waitress'
+      : 'theme-barista'
+
   return (
-    <div
-      className={`dashboard-page ${isAdmin ? 'theme-admin' : 'theme-worker'}`}
-    >
+    <div className={`dashboard-page ${themeClass}`}>
       <header className="dashboard-header">
         <div className="dashboard-header-left">
           <h1>{sq.orders}</h1>
@@ -1421,30 +1490,27 @@ export default function DashboardPage() {
 
             {/* Waitress (kamerier): open bills until paid */}
             {isWaitress && !isAdmin && (
-              <>
-                <p className="board-role-hint">{sq.floorHint}</p>
-                <section className="dashboard-section">
-                  <h2 className="section-label">
-                    {sq.unpaidBills}
-                    <span className="section-count">{tableBills.length}</span>
-                  </h2>
-                  {loading ? (
-                    <p className="empty-state">{sq.loading}</p>
-                  ) : tableBills.length === 0 ? (
-                    <p className="empty-state">{sq.noUnpaid}</p>
-                  ) : (
-                    <div className="order-grid">
-                      {tableBills.map((bill) => (
-                        <TableBillCard
-                          key={bill.table}
-                          bill={bill}
-                          onPay={() => setPayBill(bill)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              </>
+              <section className="dashboard-section">
+                <h2 className="section-label">
+                  {sq.unpaidBills}
+                  <span className="section-count">{tableBills.length}</span>
+                </h2>
+                {loading ? (
+                  <p className="empty-state">{sq.loading}</p>
+                ) : tableBills.length === 0 ? (
+                  <p className="empty-state">{sq.noUnpaid}</p>
+                ) : (
+                  <div className="order-grid">
+                    {tableBills.map((bill) => (
+                      <TableBillCard
+                        key={bill.table}
+                        bill={bill}
+                        onPay={() => setPayBill(bill)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
             )}
 
             {/* Admin: clear lifecycle sections */}
@@ -2176,7 +2242,10 @@ export default function DashboardPage() {
           bill={payBill}
           staffId={profile.id}
           onClose={() => setPayBill(null)}
-          onPaid={() => {
+          onPartialPaid={() => {
+            void loadOrders()
+          }}
+          onFullyPaid={() => {
             setPayBill(null)
             void loadOrders()
           }}
@@ -2186,7 +2255,7 @@ export default function DashboardPage() {
   )
 }
 
-/** Kamerier: one invoice card per table (sums all kitchen rounds). */
+/** Kamerier: table invoice with rounds (newest on top). */
 function TableBillCard({
   bill,
   onPay,
@@ -2200,31 +2269,12 @@ function TableBillCard({
     return () => window.clearInterval(id)
   }, [])
 
-  // Combined item lines for display
-  const lines = useMemo(() => {
-    const map = new Map<string, { qty: number; unpaid: number; price: number }>()
-    for (const o of bill.orders) {
-      for (const item of o.items) {
-        const prev = map.get(item.name) ?? {
-          qty: 0,
-          unpaid: 0,
-          price: item.price,
-        }
-        prev.qty += item.quantity
-        prev.unpaid += lineUnpaidQty(item)
-        prev.price = item.price
-        map.set(item.name, prev)
-      }
-    }
-    return [...map.entries()].map(([name, v]) => ({ name, ...v }))
-  }, [bill])
-
   return (
     <article
       className={[
         'order-card is-bill',
         bill.allReady ? 'is-ready' : '',
-        bill.hasPending ? 'is-in-progress' : '',
+        bill.hasPending ? 'is-mixed' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -2237,45 +2287,62 @@ function TableBillCard({
           <span
             className={`wait-badge ${bill.allReady ? 'wait-warm' : 'wait-hot'}`}
           >
-            {bill.hasPending ? sq.inProgress : sq.readyToPay}
-            {' · '}
-            {bill.ticketCount} {sq.rounds}
+            {bill.readyCount}/{bill.ticketCount} {sq.rounds} {sq.readyToPay}
+            {bill.hasPending ? ` · ${sq.inProgress}` : ''}
           </span>
         </div>
         <div className="order-card-meta">
           <span className="order-card-time">
-            {formatRelativeTime(bill.oldestAt)}
+            {formatRelativeTime(bill.newestAt)}
           </span>
           <span className="order-card-total">{formatEuro(bill.unpaid)}</span>
         </div>
       </div>
 
-      <ul className="order-card-items">
-        {lines.map((line) => (
-          <li key={line.name}>
-            <span className="order-card-qty">{line.qty}×</span>
-            <span>
-              {line.name}
-              {line.unpaid < line.qty && (
-                <em className="item-paid-hint">
-                  {' '}
-                  ({line.qty - line.unpaid} {sq.paidLine.toLowerCase()})
-                </em>
+      <div className="round-list">
+        {bill.orders.map((order, idx) => {
+          const ready = order.status === 'done'
+          return (
+            <div
+              key={order.id}
+              className={`round-block ${ready ? 'is-ready' : 'is-pending'}`}
+            >
+              <div className="round-head">
+                <span>
+                  {sq.round} {bill.orders.length - idx}
+                </span>
+                <span className={`round-status ${ready ? 'ok' : 'wait'}`}>
+                  {ready ? sq.readyToPay : sq.inProgress}
+                </span>
+                <span className="round-time">
+                  {formatRelativeTime(order.created_at)}
+                </span>
+              </div>
+              <ul className="order-card-items">
+                {order.items.map((item) => (
+                  <li key={item.name}>
+                    <span className="order-card-qty">{item.quantity}×</span>
+                    <span>{item.name}</span>
+                  </li>
+                ))}
+              </ul>
+              {order.note && (
+                <p className="order-card-note round-note">{order.note}</p>
               )}
-            </span>
-          </li>
-        ))}
-      </ul>
+            </div>
+          )
+        })}
+      </div>
 
       <div className="order-card-actions">
         <button
           type="button"
           className="btn btn-done"
-          disabled={bill.hasPending || bill.unpaid <= 0}
+          disabled={bill.unpaid <= 0}
           onClick={onPay}
-          title={bill.hasPending ? sq.waitKitchenBeforePay : sq.pay}
         >
-          {bill.hasPending ? sq.inProgress : sq.pay}
+          {sq.pay}
+          {bill.unpaid > 0 ? ` · ${formatEuro(bill.unpaid)}` : ''}
         </button>
       </div>
     </article>

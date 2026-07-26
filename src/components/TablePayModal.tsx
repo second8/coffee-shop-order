@@ -14,26 +14,34 @@ export default function TablePayModal({
   bill,
   staffId,
   onClose,
-  onPaid,
+  onPartialPaid,
+  onFullyPaid,
 }: {
   bill: TableBill
   staffId?: string | null
   onClose: () => void
-  onPaid: () => void
+  /** After person pay — stay open, parent refreshes bill */
+  onPartialPaid: () => void
+  /** Table visit closed */
+  onFullyPaid: () => void
 }) {
-  const lines = useMemo(() => tableBillLines(bill), [bill])
+  const lines = useMemo(
+    () => tableBillLines(bill, { readyOnly: true }),
+    [bill]
+  )
   const [selection, setSelection] = useState<Record<string, number>>({})
   const [mode, setMode] = useState<Mode>('items')
   const [people, setPeople] = useState(2)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [okFlash, setOkFlash] = useState<string | null>(null)
 
   useEffect(() => {
     const init: Record<string, number> = {}
     for (const line of lines) init[line.key] = 0
     setSelection(init)
     setErr(null)
-  }, [bill.table, bill.ticketCount, bill.unpaid, lines])
+  }, [bill.table, bill.unpaid, bill.readyCount, lines])
 
   const payAmount = useMemo(() => {
     let s = 0
@@ -56,7 +64,6 @@ export default function TablePayModal({
           qty: n,
           left: line.unpaid - n,
           total: n * line.price,
-          unit: line.price,
         }
       })
       .filter(Boolean) as {
@@ -64,13 +71,13 @@ export default function TablePayModal({
       qty: number
       left: number
       total: number
-      unit: number
     }[]
   }, [lines, selection])
 
   const equalShare =
-    people >= 1 ? Math.round((bill.unpaid / people) * 100) / 100 : 0
-  // last person absorbs rounding
+    people >= 1 && bill.unpaid > 0
+      ? Math.round((bill.unpaid / people) * 100) / 100
+      : 0
   const equalShares = useMemo(() => {
     if (people < 1 || bill.unpaid <= 0) return [] as number[]
     const base = Math.floor((bill.unpaid / people) * 100) / 100
@@ -78,7 +85,8 @@ export default function TablePayModal({
     const sum = base * people
     const diff = Math.round((bill.unpaid - sum) * 100) / 100
     if (parts.length > 0) {
-      parts[parts.length - 1] = Math.round((parts[parts.length - 1]! + diff) * 100) / 100
+      parts[parts.length - 1] =
+        Math.round((parts[parts.length - 1]! + diff) * 100) / 100
     }
     return parts
   }, [bill.unpaid, people])
@@ -102,42 +110,43 @@ export default function TablePayModal({
     setSelection(next)
   }
 
-  const payFull = async () => {
-    if (busy) return
-    if (bill.hasPending) {
-      setErr(sq.waitKitchenBeforePay)
-      return
-    }
+  const payFullReady = async () => {
+    if (busy || bill.unpaid <= 0) return
     setBusy(true)
     setErr(null)
-    const { error } = await markTablePaid(bill.table, bill.orders, staffId)
+    const { error, paidCount } = await markTablePaid(
+      bill.table,
+      bill.orders,
+      staffId
+    )
     setBusy(false)
     if (error) {
       setErr(error)
       return
     }
-    onPaid()
-    onClose()
-  }
-
-  const payEqual = async () => {
-    // Equal split is informational + pays full table once people settle
-    // Kamerier confirms full table paid after collecting equal shares
-    await payFull()
+    if (paidCount === 0) {
+      setErr(sq.pickSomething)
+      return
+    }
+    // If still pending kitchen tickets, stay for next rounds; else close
+    if (bill.hasPending) {
+      setOkFlash(sq.personPayOk)
+      onPartialPaid()
+    } else {
+      onFullyPaid()
+      onClose()
+    }
   }
 
   const paySelection = async () => {
     if (busy) return
-    if (bill.hasPending) {
-      setErr(sq.waitKitchenBeforePay)
-      return
-    }
     if (payAmount <= 0) {
       setErr(sq.pickSomething)
       return
     }
     setBusy(true)
     setErr(null)
+    setOkFlash(null)
 
     const byOrder = new Map<string, Record<string, number>>()
     for (const line of lines) {
@@ -150,7 +159,7 @@ export default function TablePayModal({
 
     for (const [orderId, sel] of byOrder) {
       const { error } = await markPartialPay(orderId, sel, staffId, {
-        note: 'Pagesë për person (zgjedhje artikujsh)',
+        note: 'Pagesë për person',
       })
       if (error) {
         setBusy(false)
@@ -160,9 +169,13 @@ export default function TablePayModal({
     }
 
     setBusy(false)
-    onPaid()
-    onClose()
+    setOkFlash(sq.personPayOk)
+    clearSel()
+    // Stay on this screen for next person
+    onPartialPaid()
   }
+
+  const canPay = bill.unpaid > 0
 
   return (
     <div className="manual-sheet-backdrop" role="presentation">
@@ -175,10 +188,8 @@ export default function TablePayModal({
             </h2>
             <div className="pay-summary-bar">
               <div>
-                <span className="pay-sum-label">{sq.stillOwed}</span>
-                <strong className="pay-sum-value">
-                  {formatEuro(bill.unpaid)}
-                </strong>
+                <span className="pay-sum-label">{sq.readyToCollect}</span>
+                <strong className="pay-sum-value">{formatEuro(bill.unpaid)}</strong>
               </div>
               <div>
                 <span className="pay-sum-label">{sq.thisPayment}</span>
@@ -194,8 +205,11 @@ export default function TablePayModal({
               </div>
             </div>
             {bill.hasPending && (
-              <p className="pay-kitchen-wait">{sq.waitKitchenBeforePay}</p>
+              <p className="pay-kitchen-wait">
+                {sq.kitchenStillWorking} ({formatEuro(bill.pendingUnpaid)})
+              </p>
             )}
+            {okFlash && <p className="pay-ok-flash">{okFlash}</p>}
           </div>
           <button type="button" className="manual-close-btn" onClick={onClose}>
             ✕
@@ -220,7 +234,9 @@ export default function TablePayModal({
         </div>
 
         <div className="manual-sheet-body">
-          {mode === 'items' && (
+          {!canPay ? (
+            <p className="empty-state">{sq.noReadyToPay}</p>
+          ) : mode === 'items' ? (
             <>
               <p className="manual-help">{sq.payPerPersonHint}</p>
               <ul className="pay-lines">
@@ -248,7 +264,7 @@ export default function TablePayModal({
                         <button
                           type="button"
                           className="qty-btn qty-btn-lg"
-                          disabled={sel <= 0 || bill.hasPending}
+                          disabled={sel <= 0}
                           onClick={() => setQty(line.key, sel - 1, line.unpaid)}
                         >
                           −
@@ -257,7 +273,7 @@ export default function TablePayModal({
                         <button
                           type="button"
                           className="qty-btn qty-btn-lg"
-                          disabled={sel >= line.unpaid || bill.hasPending}
+                          disabled={sel >= line.unpaid}
                           onClick={() => setQty(line.key, sel + 1, line.unpaid)}
                         >
                           +
@@ -271,12 +287,7 @@ export default function TablePayModal({
                 })}
               </ul>
               <div className="pay-quick-row">
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  disabled={bill.hasPending}
-                  onClick={selectAll}
-                >
+                <button type="button" className="btn btn-ghost" onClick={selectAll}>
                   {sq.selectAllUnpaid}
                 </button>
                 <button
@@ -313,9 +324,7 @@ export default function TablePayModal({
                 </div>
               )}
             </>
-          )}
-
-          {mode === 'equal' && (
+          ) : (
             <div className="equal-split-panel">
               <p className="manual-help">{sq.equalSplitHint}</p>
               <div className="people-stepper">
@@ -380,39 +389,24 @@ export default function TablePayModal({
             <button
               type="button"
               className="btn btn-primary btn-block btn-lg manual-confirm-btn"
-              disabled={busy || payAmount <= 0 || bill.hasPending}
+              disabled={busy || payAmount <= 0}
               onClick={() => void paySelection()}
-            >
-              {busy ? sq.sending : `${sq.confirmPersonPay} · ${formatEuro(payAmount)}`}
-            </button>
-          )}
-
-          {mode === 'equal' && (
-            <button
-              type="button"
-              className="btn btn-primary btn-block btn-lg manual-confirm-btn"
-              disabled={busy || bill.hasPending || bill.unpaid <= 0}
-              onClick={() => void payEqual()}
             >
               {busy
                 ? sq.sending
-                : `${sq.payFullTable} · ${formatEuro(bill.unpaid)}`}
+                : `${sq.confirmPersonPay} · ${formatEuro(payAmount)}`}
             </button>
           )}
 
-          {mode === 'items' && (
+          {(mode === 'equal' || mode === 'items') && (
             <button
               type="button"
               className="btn btn-secondary btn-block btn-lg"
-              disabled={busy || bill.hasPending || bill.unpaid <= 0}
-              onClick={() => void payFull()}
+              disabled={busy || !canPay}
+              onClick={() => void payFullReady()}
             >
-              {sq.payFullTable} ({formatEuro(bill.unpaid)})
+              {sq.payAllReady} ({formatEuro(bill.unpaid)})
             </button>
-          )}
-
-          {bill.hasPending && (
-            <p className="pay-disabled-hint">{sq.payWhenReadyHint}</p>
           )}
         </footer>
       </div>
