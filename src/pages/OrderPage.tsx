@@ -82,7 +82,7 @@ export default function OrderPage() {
             ✓
           </div>
           <h1>{sq.orderSent}</h1>
-          <p className="order-confirm-sub">{sq.bringToTable(tableNumber)}</p>
+          <p className="order-confirm-sub">{sq.bringToTable()}</p>
           {lastOrder && (
             <div className="order-confirm-summary">
               {lastOrder.items.map((item) => (
@@ -133,9 +133,6 @@ export default function OrderPage() {
             {sq.backToMenu}
           </button>
           <h1 className="review-title">{sq.yourOrder}</h1>
-          <p className="order-table-label">
-            {sq.table} {tableNumber}
-          </p>
         </header>
 
         <main className="review-main review-main-scroll">
@@ -228,9 +225,6 @@ export default function OrderPage() {
           <p className="order-menu-kicker">{MENU_TITLE}</p>
           <h1 className="order-shop-name">{SHOP_NAME}</h1>
         </div>
-        <p className="order-table-label">
-          {sq.table} {tableNumber}
-        </p>
       </header>
 
       <main className="menu-main">

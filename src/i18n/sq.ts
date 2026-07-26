@@ -14,7 +14,7 @@ export const sq = {
   placeOrder: 'Dërgo porosinë',
   sending: 'Duke dërguar…',
   orderSent: 'Porosia u dërgua!',
-  bringToTable: (n: number) => `Do t’jua sjellim te tavolina ${n}.`,
+  bringToTable: (_n?: number) => `Do t’jua sjellim së shpejti.`,
   orderAgain: 'Porosit përsëri',
   homeTitle: 'Porosi nga tavolina',
   homeScanQr: 'Skanoni kodin QR në tavolinën tuaj për të porositur.',

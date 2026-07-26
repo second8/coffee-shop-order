@@ -311,16 +311,16 @@ code {
 }
 
 .order-brand-text {
-  text-align: left;
+  text-align: center;
 }
 
 .order-menu-kicker {
-  font-family: var(--font-display);
-  font-size: 0.9rem;
-  font-style: normal;
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  font-style: italic;
   font-weight: 400;
-  letter-spacing: -0.03em;
-  color: var(--ink-soft);
+  letter-spacing: -0.02em;
+  color: var(--ink);
   margin: 0;
 }
 
@@ -354,19 +354,16 @@ code {
 }
 
 .order-shop-name {
-  font-family: var(--font-display);
-  font-size: 1.35rem;
+  font-family: var(--font-serif);
+  font-size: 1.75rem;
   font-weight: 400;
-  letter-spacing: -0.03em;
-  color: var(--ink);
-  line-height: 1.12;
+  letter-spacing: -0.02em;
+  color: #000;
+  line-height: 1.1;
 }
 
 .order-table-label {
-  font-size: 0.85rem;
-  color: var(--ink-muted);
-  letter-spacing: -0.02em;
-  text-transform: uppercase;
+  display: none;
 }
 
 .menu-main {
@@ -383,11 +380,11 @@ code {
 
 .menu-category {
   font-family: var(--font-serif);
-  font-size: 1.55rem;
+  font-size: 1.7rem;
   font-weight: 400;
   letter-spacing: -0.02em;
   text-transform: none;
-  color: var(--ink);
+  color: #000;
   line-height: 1.15;
   padding: 0.25rem 0 0.45rem 0.55rem;
   border-bottom: 1px solid var(--line);
@@ -425,14 +422,15 @@ code {
 }
 
 .menu-item.is-selected .menu-item-name {
-  color: var(--ink);
+  color: #000;
 }
 
 .menu-item-name {
-  font-size: 1.12rem;
+  font-size: 1.2rem;
   font-weight: 400;
   line-height: 1.22;
   letter-spacing: -0.03em;
+  color: #000;
   flex: 1;
 }
 
@@ -445,19 +443,19 @@ code {
 
 .menu-item-price {
   font-variant-numeric: tabular-nums;
-  color: var(--ink-soft);
-  font-size: 1rem;
+  color: #000;
+  font-size: 1.1rem;
   letter-spacing: -0.03em;
 }
 
 .menu-item-badge {
-  min-width: 1.5rem;
-  height: 1.5rem;
+  min-width: 1.55rem;
+  height: 1.55rem;
   padding: 0 0.4rem;
   border-radius: 999px;
   background: var(--highlight);
-  color: var(--ink);
-  font-size: 0.85rem;
+  color: #000;
+  font-size: 0.9rem;
   font-weight: 400;
   display: grid;
   place-items: center;
@@ -535,17 +533,18 @@ code {
 }
 
 .menu-row .menu-item-name {
-  font-size: 1.12rem;
+  font-size: 1.2rem;
   font-weight: 400;
   line-height: 1.22;
   letter-spacing: -0.03em;
+  color: #000;
 }
 
 .menu-row .menu-item-price {
-  font-size: 1.05rem;
+  font-size: 1.1rem;
   font-weight: 400;
   letter-spacing: -0.03em;
-  color: var(--ink);
+  color: #000;
 }
 
 .menu-item-actions {
@@ -883,15 +882,17 @@ code {
 
 .review-item-name {
   font-weight: 400;
-  font-size: 1.08rem;
+  font-size: 1.15rem;
   letter-spacing: -0.03em;
   line-height: 1.2;
+  color: #000;
 }
 
 .review-item-price {
-  font-size: 0.85rem;
-  color: var(--ink-muted);
+  font-size: 0.9rem;
+  color: #000;
   line-height: 1.25;
+  opacity: 0.75;
 }
 
 .review-item-total {
@@ -900,6 +901,7 @@ code {
   font-variant-numeric: tabular-nums;
   min-width: 3.5rem;
   text-align: right;
+  color: #000;
 }
 
 /* Review: scrollable submit (no fixed footer — phone keyboard safe) */
