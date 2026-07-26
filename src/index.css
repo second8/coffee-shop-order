@@ -120,10 +120,10 @@ a.btn {
   --ink-soft: #5c534e;
   --ink-muted: #8a817a;
   --line: #ddd6c8;
-  --highlight: #fbda29;
-  --terracotta: #fbda29;
-  --terracotta-deep: #e8c71a;
-  --terracotta-soft: #fff4b8;
+  --highlight: #ffa425;
+  --terracotta: #ffa425;
+  --terracotta-deep: #e89212;
+  --terracotta-soft: #ffe6c2;
   --sage: #6b7f6a;
   --sage-soft: #e4ebe2;
   --danger: #b33a2e;
@@ -421,7 +421,7 @@ code {
 }
 
 .menu-item:active {
-  background: rgba(251, 218, 41, 0.18);
+  background: rgba(255, 164, 37, 0.18);
 }
 
 .menu-item.is-selected .menu-item-name {
@@ -2083,11 +2083,11 @@ code {
 .manual-step.is-active {
   border-color: var(--highlight);
   color: var(--ink);
-  background: rgba(251, 218, 41, 0.28);
+  background: rgba(255, 164, 37, 0.28);
 }
 
 .dashboard-page.theme-admin .manual-step.is-active {
-  background: rgba(251, 218, 41, 0.22);
+  background: rgba(255, 164, 37, 0.22);
   color: #f0e8dc;
   border-color: var(--highlight);
 }
@@ -2869,7 +2869,7 @@ code {
 
 .cancel-chip.is-active {
   border-color: var(--ink);
-  background: rgba(251, 218, 41, 0.35);
+  background: rgba(255, 164, 37, 0.35);
   color: var(--ink);
 }
 
