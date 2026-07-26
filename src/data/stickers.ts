@@ -109,27 +109,95 @@ export function saveStickersConfig(cfg: StickersConfig): void {
   )
 }
 
+/** Survives if `client_name` column is missing (pre-migration). */
+export const CLIENT_NOTE_TAG_RE = /^\[office:([^\]]{1,48})\]\s*/
+
+export function encodeClientInNote(
+  clientName: string,
+  note: string | null
+): string {
+  const tag = `[office:${clientName}]`
+  return note ? `${tag} ${note}` : tag
+}
+
+export function parseClientFromNote(
+  note: string | null | undefined
+): string | null {
+  if (!note) return null
+  const m = note.match(CLIENT_NOTE_TAG_RE)
+  if (!m?.[1]) return null
+  return sanitizeClientName(m[1])
+}
+
+export function stripClientTagFromNote(
+  note: string | null | undefined
+): string | null {
+  if (!note) return null
+  const stripped = note.replace(CLIENT_NOTE_TAG_RE, '').trim()
+  return stripped || null
+}
+
+/** Resolve client/office name from column or embedded note tag. */
+export function resolveClientName(order: {
+  client_name?: string | null
+  note?: string | null
+  table_number?: number
+}): string | null {
+  const direct = order.client_name?.trim()
+  if (direct) return direct
+  return parseClientFromNote(order.note)
+}
+
 export function isClientOrder(order: {
   client_name?: string | null
+  note?: string | null
   table_number?: number
 }): boolean {
-  return Boolean(order.client_name?.trim()) || order.table_number === CLIENT_TABLE_SENTINEL
+  return (
+    Boolean(resolveClientName(order)) ||
+    order.table_number === CLIENT_TABLE_SENTINEL
+  )
 }
 
 export function orderDestinationLabel(order: {
   client_name?: string | null
+  note?: string | null
   table_number: number
 }): string {
-  const name = order.client_name?.trim()
+  const name = resolveClientName(order)
   if (name) return name
+  if (order.table_number === CLIENT_TABLE_SENTINEL) return 'ZYRË / Klient'
   return `Tavolina ${order.table_number}`
 }
 
 export function orderDestinationKey(order: {
   client_name?: string | null
+  note?: string | null
   table_number: number
 }): string {
-  const name = order.client_name?.trim()
+  const name = resolveClientName(order)
   if (name) return `c:${name.toLowerCase()}`
+  if (order.table_number === CLIENT_TABLE_SENTINEL) return 'c:__unknown__'
   return `t:${order.table_number}`
+}
+
+/** Hydrate client_name from note tag; hide tag from staff-facing note. */
+export function normalizeOrderClientFields<
+  T extends {
+    client_name?: string | null
+    note?: string | null
+    table_number: number
+  },
+>(order: T): T {
+  const name = resolveClientName(order)
+  if (!name) return order
+  return {
+    ...order,
+    client_name: name,
+    note: stripClientTagFromNote(order.note),
+    table_number:
+      order.table_number === CLIENT_TABLE_SENTINEL
+        ? CLIENT_TABLE_SENTINEL
+        : order.table_number,
+  }
 }

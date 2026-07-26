@@ -871,8 +871,9 @@ code {
 .order-page.is-client-dest {
   background: linear-gradient(
     180deg,
-    rgba(255, 164, 37, 0.12) 0%,
-    var(--cream) 12rem
+    rgba(255, 164, 37, 0.28) 0%,
+    rgba(255, 164, 37, 0.1) 8rem,
+    var(--cream) 16rem
   );
 }
 
@@ -891,9 +892,18 @@ code {
 
 .order-card.is-client-order {
   border-left-color: var(--highlight);
-  border-left-width: 6px;
-  background: linear-gradient(135deg, #fff8ef 0%, var(--paper) 55%);
-  box-shadow: 0 0 0 1px rgba(255, 164, 37, 0.35), var(--shadow);
+  border-left-width: 8px;
+  background: linear-gradient(
+    125deg,
+    #ffd28a 0%,
+    #ffe8bc 28%,
+    #fff6e4 58%,
+    var(--paper) 100%
+  );
+  box-shadow:
+    0 0 0 1px rgba(255, 164, 37, 0.55),
+    0 10px 28px rgba(255, 164, 37, 0.18),
+    var(--shadow);
 }
 
 .order-card.is-client-order .order-card-table {
@@ -901,9 +911,26 @@ code {
 }
 
 .dashboard-page.theme-admin .order-card.is-client-order {
-  background: linear-gradient(135deg, #2a2210 0%, #1c1815 60%);
-  border-color: #5a4a28;
-  box-shadow: 0 0 0 1px rgba(255, 164, 37, 0.35);
+  background: linear-gradient(
+    125deg,
+    #4a3810 0%,
+    #322818 35%,
+    #1c1815 100%
+  );
+  border-color: #c48920;
+  box-shadow:
+    0 0 0 1px rgba(255, 164, 37, 0.45),
+    0 8px 24px rgba(255, 164, 37, 0.12);
+}
+
+.dashboard-page.theme-worker .order-card.is-client-order {
+  background: linear-gradient(
+    125deg,
+    #ffd28a 0%,
+    #ffe8bc 28%,
+    #fff6e4 58%,
+    #ffffff 100%
+  );
 }
 
 .dashboard-page.theme-admin .client-order-badge {

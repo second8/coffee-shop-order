@@ -121,13 +121,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 
+  // Embed client name in note so staff UI works even without client_name column
+  let storedNote = note
+  if (sanitized.clientName) {
+    const tag = `[office:${sanitized.clientName}]`
+    storedNote = note ? `${tag} ${note}` : tag
+  }
+
   const row: Record<string, unknown> = {
     table_number: sanitized.table,
     items: sanitized.items,
     total: sanitized.total,
     status: 'pending',
   }
-  if (note) row.note = note
+  if (storedNote) row.note = storedNote
   if (sanitized.clientName) row.client_name = sanitized.clientName
 
   const selectFull =

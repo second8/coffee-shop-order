@@ -67,6 +67,7 @@ import { menu } from '../data/menu'
 import { TABLE_COUNT } from '../data/config'
 import {
   isClientOrder,
+  normalizeOrderClientFields,
   orderDestinationLabel,
 } from '../data/stickers'
 import {
@@ -968,7 +969,7 @@ export default function DashboardPage() {
           { event: '*', schema: 'public', table: 'orders' },
           (payload) => {
             if (payload.eventType === 'INSERT') {
-              const order = payload.new as Order
+              const order = normalizeOrderClientFields(payload.new as Order)
               const start = new Date()
               start.setHours(0, 0, 0, 0)
               if (new Date(order.created_at) >= start && !order.archived_at) {
@@ -987,7 +988,7 @@ export default function DashboardPage() {
               knownIdsRef.current.add(order.id)
             }
             if (payload.eventType === 'UPDATE') {
-              const order = payload.new as Order
+              const order = normalizeOrderClientFields(payload.new as Order)
               setOrders((prev) => {
                 if (order.archived_at)
                   return prev.filter((o) => o.id !== order.id)

@@ -3,7 +3,10 @@ import { menu } from '../data/menu'
 import {
   CLIENT_MIN_ORDER_EUR,
   CLIENT_TABLE_SENTINEL,
+  encodeClientInNote,
+  normalizeOrderClientFields,
   orderDestinationKey,
+  resolveClientName,
   sanitizeClientName,
 } from '../data/stickers'
 import type {
@@ -47,7 +50,9 @@ function readDemoOrders(): Order[] {
   try {
     const raw = localStorage.getItem(DEMO_KEY)
     if (!raw) return []
-    return JSON.parse(raw) as Order[]
+    return (JSON.parse(raw) as Order[]).map((o) =>
+      normalizeOrderClientFields(o)
+    )
   } catch {
     return []
   }
@@ -311,9 +316,17 @@ function buildOrderRow(
     total,
     status: 'pending',
   }
-  if (note) row.note = note
+  // Always embed client name in note so staff still see it if column missing
+  const noteWithClient = clientName
+    ? encodeClientInNote(clientName, note)
+    : note
+  if (noteWithClient) row.note = noteWithClient
   if (clientName) row.client_name = clientName
   return row
+}
+
+function asOrder(row: unknown): Order {
+  return normalizeOrderClientFields(row as Order)
 }
 
 async function insertOrderDirect(
@@ -351,12 +364,12 @@ async function insertOrderDirect(
       .select('id,table_number,items,total,status,created_at,completed_at,completed_by')
       .single()
     if (!retry.error && retry.data) {
-      return { data: retry.data as unknown as Order, error: null }
+      return { data: asOrder(retry.data), error: null }
     }
     error = retry.error
   }
 
-  // Schema without client_name yet — still insert; name is lost until migration
+  // Schema without client_name — note still has [office:Name] tag
   if (error && String(error.message).toLowerCase().includes('client_name')) {
     const { client_name: _c, ...withoutClient } = row
     void _c
@@ -366,19 +379,13 @@ async function insertOrderDirect(
       .select(cols)
       .single()
     if (!retry.error && retry.data) {
-      return {
-        data: {
-          ...(retry.data as unknown as Order),
-          client_name: (row.client_name as string) || null,
-        },
-        error: null,
-      }
+      return { data: asOrder(retry.data), error: null }
     }
     error = retry.error
   }
 
   if (error) return { data: null, error: error.message }
-  return { data: data as unknown as Order, error: null }
+  return { data: asOrder(data), error: null }
 }
 
 export async function createOrder(
@@ -400,7 +407,7 @@ export async function createOrder(
   const destClient = sanitized.clientName
 
   if (!supabase) {
-    const order: Order = {
+    const order: Order = normalizeOrderClientFields({
       id: crypto.randomUUID(),
       table_number: destTable,
       items: sanitized.items,
@@ -410,9 +417,11 @@ export async function createOrder(
       completed_at: null,
       completed_by: null,
       archived_at: null,
-      note: cleanNote,
+      note: destClient
+        ? encodeClientInNote(destClient, cleanNote)
+        : cleanNote,
       client_name: destClient,
-    }
+    })
     writeDemoOrders([order, ...readDemoOrders()])
     return { data: order, error: null }
   }
@@ -880,10 +889,11 @@ export function buildTableBills(
     const unpaid = ready.reduce((s, o) => s + unpaidTotal(o), 0)
     const pendingUnpaid = pending.reduce((s, o) => s + unpaidTotal(o), 0)
     const gross = list.reduce((s, o) => s + Number(o.total), 0)
-    const clientName = list[0]?.client_name?.trim() || null
+    const head = normalizeOrderClientFields(list[0]!)
+    const clientName = resolveClientName(head)
     const table = clientName
       ? CLIENT_TABLE_SENTINEL
-      : list[0]?.table_number ?? 0
+      : head.table_number ?? 0
     bills.push({
       key,
       table,
@@ -1075,7 +1085,10 @@ export async function fetchOrdersSince(sinceIso: string): Promise<{
     .limit(3000)
 
   if (error) return { data: [], error: error.message }
-  return { data: (data as unknown as Order[]) ?? [], error: null }
+  const rows = ((data as unknown as Order[]) ?? []).map((o) =>
+    normalizeOrderClientFields(o)
+  )
+  return { data: rows, error: null }
 }
 
 export async function fetchArchivedOrders(): Promise<{
@@ -1110,7 +1123,10 @@ export async function fetchArchivedOrders(): Promise<{
     .limit(500)
 
   if (error) return { data: [], error: error.message }
-  return { data: (data as unknown as Order[]) ?? [], error: null }
+  const rows = ((data as unknown as Order[]) ?? []).map((o) =>
+    normalizeOrderClientFields(o)
+  )
+  return { data: rows, error: null }
 }
 
 async function patchOrder(
