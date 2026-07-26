@@ -188,7 +188,7 @@ code {
   gap: 0.5rem;
   min-height: 48px;
   padding: 0.75rem 1.25rem;
-  border-radius: 999px;
+  border-radius: 8px;
   font-weight: 600;
   letter-spacing: 0.01em;
   transition:
