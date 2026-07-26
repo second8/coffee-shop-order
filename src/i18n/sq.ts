@@ -39,10 +39,10 @@ export const sq = {
   noteLabel: 'Shënim',
 
   staffAccess: 'Hyrja e stafit',
-  staffHint: 'Shkruani emrin e përdoruesit (p.sh. shankisti1) dhe fjalëkalimin',
+  staffHint: 'Hyni me përdoruesin dhe fjalëkalimin',
   email: 'Email',
   username: 'Përdoruesi',
-  usernamePlaceholder: 'shankisti1 · kamerieri1 · pronari_phm',
+  usernamePlaceholder: 'Përdoruesi',
   password: 'Fjalëkalimi',
   signIn: 'Hyr',
   signingIn: 'Duke hyrë…',
