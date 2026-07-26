@@ -70,6 +70,77 @@ export function isActiveOrder(o: Order): boolean {
   return !o.archived_at
 }
 
+export function linePaidQty(item: CartItem): number {
+  const p = Math.floor(Number(item.paid_quantity ?? 0))
+  if (!Number.isFinite(p) || p < 0) return 0
+  return Math.min(p, item.quantity)
+}
+
+export function lineUnpaidQty(item: CartItem): number {
+  return Math.max(0, item.quantity - linePaidQty(item))
+}
+
+export function unpaidTotal(order: Order): number {
+  return order.items.reduce(
+    (sum, i) => sum + i.price * lineUnpaidQty(i),
+    0
+  )
+}
+
+export function isOrderFullyPaid(order: Order): boolean {
+  if (order.paid_at) return true
+  if (order.status === 'cancelled') return true
+  return order.items.every((i) => lineUnpaidQty(i) === 0) && order.items.length > 0
+}
+
+/** Open bill for waitress: not cancelled, not archived, not fully paid. */
+export function isOpenBill(o: Order): boolean {
+  return (
+    isActiveOrder(o) &&
+    o.status !== 'cancelled' &&
+    !isOrderFullyPaid(o)
+  )
+}
+
+/** Kitchen still needs to prepare. */
+export function isKitchenPending(o: Order): boolean {
+  return isActiveOrder(o) && o.status === 'pending'
+}
+
+export function mergeCartItems(
+  existing: CartItem[],
+  added: CartItem[]
+): CartItem[] {
+  const map = new Map<string, CartItem>()
+  for (const i of existing) {
+    map.set(i.name, {
+      name: i.name,
+      price: i.price,
+      quantity: i.quantity,
+      paid_quantity: linePaidQty(i),
+    })
+  }
+  for (const i of added) {
+    const prev = map.get(i.name)
+    if (prev) {
+      prev.quantity = Math.min(MAX_QTY_PER_ITEM * 2, prev.quantity + i.quantity)
+      // unpaid new units keep paid_quantity as-is
+    } else {
+      map.set(i.name, {
+        name: i.name,
+        price: i.price,
+        quantity: i.quantity,
+        paid_quantity: 0,
+      })
+    }
+  }
+  return [...map.values()]
+}
+
+export function cartTotal(items: CartItem[]): number {
+  return items.reduce((s, i) => s + i.price * i.quantity, 0)
+}
+
 export function sanitizeOrderInput(
   tableNumber: number,
   items: CartItem[]
@@ -125,6 +196,11 @@ export type CreateOrderOptions = {
    * Avoids double-insert when /api/create-order already wrote a row.
    */
   mode?: 'customer' | 'staff'
+  /**
+   * When staff adds for a table that already has an open bill,
+   * append items to that order instead of creating a second ticket.
+   */
+  mergeOpenTable?: boolean
 }
 
 function buildOrderRow(
@@ -149,12 +225,11 @@ async function insertOrderDirect(
 ): Promise<{ data: Order | null; error: string | null }> {
   if (!supabase) return { data: null, error: 'Supabase not configured' }
 
+  const cols = await orderSelectCols()
   let { data, error } = await supabase
     .from('orders')
     .insert(row)
-    .select(
-      'id,table_number,items,total,status,created_at,completed_at,completed_by,archived_at,note'
-    )
+    .select(cols)
     .single()
 
   // Retry without note / optional columns if schema lag
@@ -226,6 +301,14 @@ export async function createOrder(
 
   // Staff / manual: single path only (no API) so we never write twice
   if (mode === 'staff') {
+    if (options?.mergeOpenTable !== false) {
+      const merged = await mergeIntoOpenTableOrder(
+        tableNumber,
+        sanitized.items,
+        cleanNote
+      )
+      if (merged.data || merged.error) return merged
+    }
     return insertOrderDirect(row, cleanNote)
   }
 
@@ -315,13 +398,302 @@ export async function detectNoteSupport(): Promise<boolean> {
   return schemaSupportsNote
 }
 
+let schemaSupportsPaid: boolean | null = null
+
+export async function detectPaidSupport(): Promise<boolean> {
+  if (schemaSupportsPaid !== null) return schemaSupportsPaid
+  if (!supabase) {
+    schemaSupportsPaid = true
+    return true
+  }
+  const { error } = await supabase.from('orders').select('paid_at').limit(1)
+  schemaSupportsPaid = !error
+  return schemaSupportsPaid
+}
+
 async function orderSelectCols(): Promise<string> {
   const hasArchive = await detectArchiveSupport()
   const hasNote = await detectNoteSupport()
+  const hasPaid = await detectPaidSupport()
   let cols = ORDER_SELECT_BASE
   if (hasArchive) cols += ',archived_at'
   if (hasNote) cols += ',note'
+  if (hasPaid) cols += ',paid_at,paid_by'
   return cols
+}
+
+/**
+ * Find open bill for table (unpaid, not cancelled) and append items.
+ * Returns { data: null, error: null } if no open bill (caller should insert new).
+ */
+export async function mergeIntoOpenTableOrder(
+  tableNumber: number,
+  newItems: CartItem[],
+  note: string | null
+): Promise<{ data: Order | null; error: string | null }> {
+  const since = startOfLocalDay().toISOString()
+
+  if (!supabase) {
+    const list = readDemoOrders()
+    const open = list
+      .filter(
+        (o) =>
+          o.table_number === tableNumber &&
+          isOpenBill(o) &&
+          new Date(o.created_at).getTime() >= new Date(since).getTime()
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )[0]
+    if (!open) return { data: null, error: null }
+    const items = mergeCartItems(open.items, newItems)
+    const total = cartTotal(items)
+    const noteMerged = [open.note, note].filter(Boolean).join(' · ') || null
+    // If was done (kitchen ready), new food → back to pending for barista
+    const status = open.status === 'done' ? 'pending' : open.status
+    const updated: Order = {
+      ...open,
+      items,
+      total,
+      note: noteMerged,
+      status,
+      completed_at: status === 'pending' ? null : open.completed_at,
+    }
+    writeDemoOrders(list.map((o) => (o.id === open.id ? updated : o)))
+    return { data: updated, error: null }
+  }
+
+  const cols = await orderSelectCols()
+  const { data: rows, error } = await supabase
+    .from('orders')
+    .select(cols)
+    .eq('table_number', tableNumber)
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(40)
+
+  if (error) return { data: null, error: error.message }
+
+  const open = ((rows as unknown as Order[]) ?? []).find((o) => isOpenBill(o))
+  if (!open) return { data: null, error: null }
+
+  const items = mergeCartItems(open.items, newItems)
+  const total = cartTotal(items)
+  const noteMerged = [open.note, note].filter(Boolean).join(' · ') || null
+  const status = open.status === 'done' ? 'pending' : open.status
+
+  const patch: Partial<Order> = {
+    items,
+    total,
+    note: noteMerged,
+    status,
+  }
+  if (status === 'pending') {
+    patch.completed_at = null
+    patch.completed_by = null
+  }
+
+  const { error: upErr } = await patchOrder(open.id, patch)
+  if (upErr) return { data: null, error: upErr }
+
+  return {
+    data: {
+      ...open,
+      ...patch,
+    },
+    error: null,
+  }
+}
+
+/** Selection of qty to pay per item name. */
+export type PaySelection = Record<string, number>
+
+export function applyPaySelection(
+  order: Order,
+  selection: PaySelection
+): { items: CartItem[]; fullyPaid: boolean; paidAmount: number } {
+  let paidAmount = 0
+  const items = order.items.map((line) => {
+    const want = Math.floor(Number(selection[line.name] ?? 0))
+    const unpaid = lineUnpaidQty(line)
+    const payNow = Math.max(0, Math.min(unpaid, want))
+    paidAmount += payNow * line.price
+    return {
+      ...line,
+      paid_quantity: linePaidQty(line) + payNow,
+    }
+  })
+  const fullyPaid =
+    items.length > 0 && items.every((i) => lineUnpaidQty(i) === 0)
+  return { items, fullyPaid, paidAmount }
+}
+
+export async function markOrderPaid(
+  orderId: string,
+  staffUserId?: string | null
+): Promise<{ data: Order | null; error: string | null }> {
+  // Full pay: set all paid_quantity = quantity
+  if (!supabase) {
+    let updated: Order | null = null
+    writeDemoOrders(
+      readDemoOrders().map((o) => {
+        if (o.id !== orderId) return o
+        const items = o.items.map((i) => ({
+          ...i,
+          paid_quantity: i.quantity,
+        }))
+        updated = {
+          ...o,
+          items,
+          paid_at: new Date().toISOString(),
+          paid_by: staffUserId ?? null,
+        }
+        return updated
+      })
+    )
+    return { data: updated, error: null }
+  }
+
+  const cols = await orderSelectCols()
+  const { data: row, error: fetchErr } = await supabase
+    .from('orders')
+    .select(cols)
+    .eq('id', orderId)
+    .maybeSingle()
+  if (fetchErr) return { data: null, error: fetchErr.message }
+  if (!row) return { data: null, error: 'Porosia nuk u gjet' }
+
+  const order = row as unknown as Order
+  const items = order.items.map((i) => ({
+    ...i,
+    paid_quantity: i.quantity,
+  }))
+  const now = new Date().toISOString()
+  const patch: Partial<Order> = {
+    items,
+    paid_at: now,
+    paid_by: staffUserId ?? null,
+  }
+  // If kitchen never marked done, mark done on full pay
+  if (order.status === 'pending') {
+    patch.status = 'done'
+    patch.completed_at = now
+    patch.completed_by = staffUserId ?? null
+  }
+
+  const { error } = await patchOrder(orderId, patch)
+  if (error) {
+    if (error.toLowerCase().includes('paid_at')) {
+      return {
+        data: null,
+        error:
+          'Kolona paid_at mungon. Ekzekuto supabase/MIGRATION_V3_ROLES_PAY.sql',
+      }
+    }
+    return { data: null, error }
+  }
+  return { data: { ...order, ...patch }, error: null }
+}
+
+export async function markPartialPay(
+  orderId: string,
+  selection: PaySelection,
+  staffUserId?: string | null
+): Promise<{ data: Order | null; error: string | null; paidAmount: number }> {
+  if (!supabase) {
+    let paidAmount = 0
+    let updated: Order | null = null
+    writeDemoOrders(
+      readDemoOrders().map((o) => {
+        if (o.id !== orderId) return o
+        const result = applyPaySelection(o, selection)
+        paidAmount = result.paidAmount
+        updated = {
+          ...o,
+          items: result.items,
+          paid_at: result.fullyPaid ? new Date().toISOString() : o.paid_at,
+          paid_by: result.fullyPaid ? staffUserId ?? null : o.paid_by,
+        }
+        return updated
+      })
+    )
+    return { data: updated, error: null, paidAmount }
+  }
+
+  const cols = await orderSelectCols()
+  const { data: row, error: fetchErr } = await supabase
+    .from('orders')
+    .select(cols)
+    .eq('id', orderId)
+    .maybeSingle()
+  if (fetchErr) return { data: null, error: fetchErr.message, paidAmount: 0 }
+  if (!row) return { data: null, error: 'Porosia nuk u gjet', paidAmount: 0 }
+
+  const order = row as unknown as Order
+  const result = applyPaySelection(order, selection)
+  if (result.paidAmount <= 0) {
+    return { data: order, error: 'Zgjidh diçka për pagesë', paidAmount: 0 }
+  }
+
+  const patch: Partial<Order> = { items: result.items }
+  if (result.fullyPaid) {
+    patch.paid_at = new Date().toISOString()
+    patch.paid_by = staffUserId ?? null
+    if (order.status === 'pending') {
+      patch.status = 'done'
+      patch.completed_at = patch.paid_at
+      patch.completed_by = staffUserId ?? null
+    }
+  }
+
+  const { error } = await patchOrder(orderId, patch)
+  if (error) return { data: null, error, paidAmount: 0 }
+  return {
+    data: { ...order, ...patch },
+    error: null,
+    paidAmount: result.paidAmount,
+  }
+}
+
+/** Admin: delete all non-archived or all orders for a fresh start. */
+export async function wipeAllOrders(opts?: {
+  includeArchive?: boolean
+  wipeSessions?: boolean
+}): Promise<{ removed: number; error: string | null }> {
+  const includeArchive = opts?.includeArchive !== false
+  const wipeSessions = opts?.wipeSessions !== false
+
+  if (!supabase) {
+    const before = readDemoOrders().length
+    writeDemoOrders([])
+    if (wipeSessions) writeDemoSessions([])
+    return { removed: before, error: null }
+  }
+
+  // Delete in chunks
+  let removed = 0
+  const { data, error } = await supabase
+    .from('orders')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000')
+    .select('id')
+
+  if (error) return { removed: 0, error: error.message }
+  removed = data?.length ?? 0
+
+  if (!includeArchive) {
+    // already deleted all
+  }
+
+  if (wipeSessions) {
+    await supabase
+      .from('staff_sessions')
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000')
+  }
+
+  return { removed, error: null }
 }
 
 export async function fetchOrdersSince(sinceIso: string): Promise<{
@@ -396,22 +768,23 @@ async function patchOrder(
     return { error: null }
   }
 
-  // Drop archive fields if column not migrated yet
   const hasArchive = await detectArchiveSupport()
+  const hasPaid = await detectPaidSupport()
   const safePatch: Record<string, unknown> = { ...patch }
-  if (!hasArchive) {
-    delete safePatch.archived_at
+  if (!hasArchive) delete safePatch.archived_at
+  if (!hasPaid) {
+    delete safePatch.paid_at
+    delete safePatch.paid_by
   }
 
   const { error } = await supabase.from('orders').update(safePatch).eq('id', orderId)
   if (!error) return { error: null }
 
-  // Retry with only status if optional columns missing (not for cancelled —
-  // that needs the check constraint migration)
   if (
     error.message.includes('completed_at') ||
     error.message.includes('completed_by') ||
-    error.message.includes('archived_at')
+    error.message.includes('archived_at') ||
+    error.message.includes('paid_at')
   ) {
     if (typeof safePatch.status === 'string' && safePatch.status !== 'cancelled') {
       const { error: e2 } = await supabase

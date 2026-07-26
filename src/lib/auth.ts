@@ -5,6 +5,11 @@ import {
   startStaffSession,
   supabase,
 } from './orders'
+import {
+  emailToUsername,
+  normalizeRole,
+  usernameToEmail,
+} from './staffRoles'
 import type { StaffProfile, StaffRole } from '../types'
 
 export type AuthState = {
@@ -25,8 +30,20 @@ function roleFromUser(user: User): StaffRole | null {
   const raw =
     (user.app_metadata?.role as string | undefined) ||
     (user.user_metadata?.role as string | undefined)
-  if (raw === 'admin' || raw === 'worker') return raw
-  return null
+  if (!raw) return null
+  return normalizeRole(raw)
+}
+
+/**
+ * Login with username (shankisti1) or full email.
+ * Usernames map to username@pristinamuffins.local
+ */
+export async function signInWithUsername(
+  usernameOrEmail: string,
+  password: string
+): Promise<{ error: string | null }> {
+  const email = usernameToEmail(usernameOrEmail)
+  return signInWithEmail(email, password)
 }
 
 export async function signInWithEmail(
@@ -35,20 +52,39 @@ export async function signInWithEmail(
 ): Promise<{ error: string | null }> {
   if (!supabase) {
     const e = email.trim().toLowerCase()
-    let role: StaffRole | null = null
-    if (e === 'admin@demo.local' && password === 'admin') role = 'admin'
-    if (e === 'worker@demo.local' && password === 'worker') role = 'worker'
-    if (!role) {
+    const user = e.includes('@') ? e.split('@')[0]! : e
+    const demos: Record<
+      string,
+      { role: StaffRole; name: string; password: string }
+    > = {
+      admin: { role: 'admin', name: 'Admin', password: 'admin' },
+      shankisti1: { role: 'barista', name: 'Shankist 1', password: 'kafe11' },
+      shankisti2: { role: 'barista', name: 'Shankist 2', password: 'kafe22' },
+      kamerieri1: {
+        role: 'waitress',
+        name: 'Kamerier 1',
+        password: 'fature11',
+      },
+      kamerieri2: {
+        role: 'waitress',
+        name: 'Kamerier 2',
+        password: 'fature22',
+      },
+      worker: { role: 'barista', name: 'Punëtor', password: 'worker' },
+    }
+    const demo = demos[user]
+    if (!demo || demo.password !== password) {
       return {
         error:
-          'Email ose fjalëkalim i gabuar (demo: admin@demo.local / admin)',
+          'Përdorues ose fjalëkalim i gabuar (demo: shankisti1 / kafe11)',
       }
     }
     const profile: StaffProfile = {
-      id: role === 'admin' ? 'demo-admin' : 'demo-worker',
-      email: e,
-      role,
-      display_name: role === 'admin' ? 'Admin' : 'Punëtor',
+      id: `demo-${user}`,
+      email: usernameToEmail(user),
+      role: demo.role,
+      display_name: demo.name,
+      username: user,
     }
     sessionStorage.setItem(DEMO_SESSION_KEY, JSON.stringify(profile))
     await startStaffSession(profile.id, profile.display_name)
@@ -70,6 +106,29 @@ export async function signInWithEmail(
   return { error: null }
 }
 
+/**
+ * Re-verify admin password (for dangerous actions like wipe).
+ */
+export async function verifyAdminPassword(
+  password: string
+): Promise<{ ok: boolean; error: string | null }> {
+  if (!supabase) {
+    return { ok: password === 'admin', error: null }
+  }
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  const email = session?.user?.email
+  if (!email) return { ok: false, error: 'Nuk jeni i kyçur' }
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  })
+  if (error) return { ok: false, error: 'Fjalëkalim i gabuar' }
+  return { ok: true, error: null }
+}
+
 export async function signOut(): Promise<void> {
   await endStaffSession()
   if (!supabase) {
@@ -89,10 +148,6 @@ export function getDemoProfile(): StaffProfile | null {
   }
 }
 
-/**
- * Resolve staff role.
- * Prefer JWT app_metadata (set by service role) — works even if RLS blocks staff_profiles.
- */
 export async function fetchStaffProfile(
   user: User
 ): Promise<StaffProfile | null> {
@@ -103,7 +158,6 @@ export async function fetchStaffProfile(
   const metaName =
     (user.user_metadata?.display_name as string | undefined) ?? null
 
-  // Always try profiles table for real display_name (Punëtor 1, etc.)
   const { data, error } = await supabase
     .from('staff_profiles')
     .select('id, role, display_name')
@@ -114,15 +168,17 @@ export async function fetchStaffProfile(
     console.error('staff_profiles read error:', error.message)
   }
 
-  if (data && (data.role === 'admin' || data.role === 'worker')) {
+  if (data?.role) {
+    const role = normalizeRole(data.role as string)
     return {
       id: data.id as string,
       email,
-      role: data.role as StaffRole,
+      role,
       display_name:
         (data.display_name as string | null) ||
         metaName ||
-        (data.role === 'admin' ? 'Admin' : email.split('@')[0] || 'Punëtor'),
+        emailToUsername(email),
+      username: emailToUsername(email),
     }
   }
 
@@ -131,23 +187,20 @@ export async function fetchStaffProfile(
       id: user.id,
       email,
       role: metaRole,
-      display_name: metaName ?? email.split('@')[0] ?? null,
+      display_name: metaName ?? emailToUsername(email),
+      username: emailToUsername(email),
     }
   }
 
-  // Default worker if no role set anywhere
   return {
     id: user.id,
     email,
     role: 'worker',
-    display_name: metaName ?? email.split('@')[0] ?? null,
+    display_name: metaName ?? emailToUsername(email),
+    username: emailToUsername(email),
   }
 }
 
-/**
- * Start a work session if this browser tab does not already have one
- * (e.g. after page refresh while still logged in).
- */
 export async function ensureStaffSession(
   profile: StaffProfile
 ): Promise<void> {
@@ -165,7 +218,6 @@ export async function getSession(): Promise<Session | null> {
   return data.session
 }
 
-/** Refresh session so app_metadata role changes apply. */
 export async function refreshSession(): Promise<Session | null> {
   if (!supabase) return null
   const { data, error } = await supabase.auth.refreshSession()

@@ -2128,6 +2128,172 @@ code {
   font-size: 1.1rem;
 }
 
+.live-hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  width: 100%;
+}
+
+.board-role-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+  line-height: 1.4;
+}
+
+.order-card.is-bill {
+  border-left-color: #3d7a9e;
+  background: #f3f7fa;
+}
+
+.order-card.is-bill.is-ready {
+  border-left-color: #5a9e6f;
+  background: #f0f7f2;
+}
+
+.dashboard-page.theme-admin .order-card.is-bill {
+  background: #1a2228;
+  border-color: #3a4a55;
+}
+
+.dashboard-page.theme-admin .order-card.is-bill.is-ready {
+  background: #1a2a20;
+  border-color: #3d6a4c;
+}
+
+.item-paid-hint {
+  font-style: normal;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.pay-open-total {
+  margin: 0.35rem 0 0;
+  font-size: 0.95rem;
+}
+
+.pay-lines {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pay-line {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.pay-line.is-paid {
+  opacity: 0.55;
+}
+
+.pay-line-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.pay-line-info span {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.pay-line-sum {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 3.5rem;
+  text-align: right;
+}
+
+.wipe-panel {
+  max-width: 520px;
+}
+
+.wipe-warning {
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  background: #f8e0dc;
+  border: 1px solid #e5b0a8;
+  color: var(--danger);
+  line-height: 1.45;
+  font-size: 0.92rem;
+}
+
+.dashboard-page.theme-admin .wipe-warning {
+  background: #2a1a18;
+  border-color: #6a3a35;
+  color: #f0b0a8;
+}
+
+.wipe-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 1rem;
+}
+
+.wipe-input {
+  margin-bottom: 0.5rem;
+}
+
+.dashboard-page.theme-admin .wipe-input {
+  background: #2a241f;
+  border-color: #3d342c;
+  color: #f5efe6;
+}
+
+.wipe-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0.5rem 0 0.75rem;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.wipe-ok {
+  color: #2d8a4e;
+  font-weight: 600;
+}
+
+.btn-danger {
+  background: #a5281c;
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.role-pill.role-barista {
+  background: #2a241f;
+  color: #e0c090;
+  border: 1px solid #5a4a30;
+}
+
+.role-pill.role-waitress {
+  background: #1f2830;
+  color: #a8c8e0;
+  border: 1px solid #3a4a5c;
+}
+
 /* Customer note on order page */
 .order-note-field {
   margin-top: 1.25rem;

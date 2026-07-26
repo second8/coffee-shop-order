@@ -16,7 +16,7 @@ import {
   isDemoAuth,
   onAuthChange,
   refreshSession,
-  signInWithEmail,
+  signInWithUsername,
   signOut,
 } from '../lib/auth'
 import {
@@ -36,7 +36,11 @@ import {
   fetchTodayOrders,
   formatDuration,
   isActiveOrder,
+  isKitchenPending,
+  isOpenBill,
+  isOrderFullyPaid,
   isSupabaseConfigured,
+  lineUnpaidQty,
   markOrderDone,
   mergeWorkerRoster,
   ordersByWorker,
@@ -46,7 +50,16 @@ import {
   sessionDurationSeconds,
   subscribeDemoOrders,
   supabase,
+  unpaidTotal,
 } from '../lib/orders'
+import {
+  isAdminRole,
+  isKitchenRole,
+  isWaitressRole,
+  roleLabelSq,
+} from '../lib/staffRoles'
+import PayBillModal from '../components/PayBillModal'
+import AdminWipePanel from '../components/AdminWipePanel'
 import { menu } from '../data/menu'
 import { TABLE_COUNT } from '../data/config'
 import {
@@ -59,7 +72,7 @@ import {
 import { sq } from '../i18n/sq'
 import type { CartItem, Order, StaffProfile, StaffSession } from '../types'
 
-type Tab = 'live' | 'sales' | 'speed' | 'team' | 'archive'
+type Tab = 'live' | 'sales' | 'speed' | 'team' | 'archive' | 'settings'
 type SalesRange = 'today' | '7d' | '30d' | '90d'
 
 const PREVIEW_LIMIT = 5
@@ -183,8 +196,10 @@ function OrderCard({
   onArchive,
   onRestore,
   onDelete,
+  onPay,
   variant,
   showDetails,
+  doneLabel,
 }: {
   order: Order
   staffName?: string
@@ -193,12 +208,14 @@ function OrderCard({
   onArchive?: (id: string) => void
   onRestore?: (id: string) => void
   onDelete?: (id: string) => void
-  variant: 'pending' | 'done' | 'cancelled' | 'archive'
+  onPay?: (order: Order) => void
+  variant: 'pending' | 'done' | 'cancelled' | 'archive' | 'bill'
   showDetails?: boolean
+  doneLabel?: string
 }) {
   const [, setTick] = useState(0)
   useEffect(() => {
-    if (variant !== 'pending') return
+    if (variant !== 'pending' && variant !== 'bill') return
     const id = window.setInterval(() => setTick((t) => t + 1), 15_000)
     return () => window.clearInterval(id)
   }, [variant])
@@ -206,6 +223,11 @@ function OrderCard({
   const mins = waitMinutes(order.created_at)
   const priority = waitPriority(mins)
   const details = showDetails ?? true
+  const owed = unpaidTotal(order)
+  const kitchenReady = order.status === 'done'
+  const partial =
+    order.items.some((i) => lineUnpaidQty(i) < i.quantity && lineUnpaidQty(i) > 0) ||
+    order.items.some((i) => (i.paid_quantity ?? 0) > 0 && !isOrderFullyPaid(order))
 
   return (
     <article
@@ -214,7 +236,11 @@ function OrderCard({
         variant === 'pending' ? '' : 'is-done',
         variant === 'cancelled' ? 'is-cancelled' : '',
         variant === 'archive' ? 'is-archive' : '',
-        variant === 'pending' ? `priority-${priority}` : '',
+        variant === 'bill' ? 'is-bill' : '',
+        variant === 'bill' && kitchenReady ? 'is-ready' : '',
+        variant === 'pending' || (variant === 'bill' && !kitchenReady)
+          ? `priority-${priority}`
+          : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -224,37 +250,54 @@ function OrderCard({
           <h2 className="order-card-table">
             {sq.table} {order.table_number}
           </h2>
-          {variant === 'pending' && (
+          {(variant === 'pending' || variant === 'bill') && (
             <span className={`wait-badge wait-${priority}`}>
               {mins === 0
                 ? formatRelativeTime(order.created_at)
                 : `${mins} min · ${sq.waiting}`}
-              {priority === 'critical' && ` · ${sq.priorityCritical}`}
-              {priority === 'hot' && ` · ${sq.priorityHot}`}
-              {priority === 'warm' && ` · ${sq.priorityWarm}`}
+              {variant === 'bill' && (
+                <>
+                  {' · '}
+                  {kitchenReady ? sq.readyKitchen : sq.waitingKitchen}
+                  {partial ? ` · ${sq.partialPaid}` : ''}
+                </>
+              )}
             </span>
           )}
         </div>
         <div className="order-card-meta">
           <span className="order-card-time">
-            {variant === 'pending'
+            {variant === 'pending' || variant === 'bill'
               ? formatRelativeTime(order.created_at)
               : formatTime(order.completed_at || order.created_at)}
           </span>
           <span className="order-card-total">
-            {formatEuro(Number(order.total))}
+            {variant === 'bill'
+              ? formatEuro(owed)
+              : formatEuro(Number(order.total))}
           </span>
         </div>
       </div>
 
       {details && (
         <ul className="order-card-items">
-          {order.items.map((item) => (
-            <li key={item.name}>
-              <span className="order-card-qty">{item.quantity}×</span>
-              <span>{item.name}</span>
-            </li>
-          ))}
+          {order.items.map((item) => {
+            const unpaid = lineUnpaidQty(item)
+            return (
+              <li key={item.name}>
+                <span className="order-card-qty">{item.quantity}×</span>
+                <span>
+                  {item.name}
+                  {variant === 'bill' && unpaid < item.quantity && (
+                    <em className="item-paid-hint">
+                      {' '}
+                      ({item.quantity - unpaid} {sq.paidLine.toLowerCase()})
+                    </em>
+                  )}
+                </span>
+              </li>
+            )
+          })}
         </ul>
       )}
 
@@ -265,7 +308,7 @@ function OrderCard({
         </p>
       )}
 
-      {staffName && variant !== 'pending' && (
+      {staffName && variant !== 'pending' && variant !== 'bill' && (
         <p className="order-card-by">
           {sq.by} <strong>{staffName}</strong>
         </p>
@@ -278,10 +321,30 @@ function OrderCard({
             className="btn btn-done"
             onClick={() => onDone(order.id)}
           >
-            {sq.markDone}
+            {doneLabel || sq.markReady}
           </button>
         )}
         {variant === 'pending' && onCancel && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              if (window.confirm(sq.confirmCancel)) onCancel(order.id)
+            }}
+          >
+            {sq.cancel}
+          </button>
+        )}
+        {variant === 'bill' && onPay && (
+          <button
+            type="button"
+            className="btn btn-done"
+            onClick={() => onPay(order)}
+          >
+            {sq.pay}
+          </button>
+        )}
+        {variant === 'bill' && onCancel && order.status === 'pending' && (
           <button
             type="button"
             className="btn btn-ghost"
@@ -414,9 +477,10 @@ function ManualOrderModal({
     if (lines.length === 0 || submitting) return
     setSubmitting(true)
     setErr(null)
-    // Staff-only path: one DB insert (never API + client = 2 orders)
+    // Staff path: merge into open table bill if exists, else new order
     const { data, error } = await createOrder(table, lines, total, note, {
       mode: 'staff',
+      mergeOpenTable: true,
     })
     setSubmitting(false)
     if (error) {
@@ -610,10 +674,11 @@ function ManualOrderModal({
 export default function DashboardPage() {
   const [authLoading, setAuthLoading] = useState(true)
   const [profile, setProfile] = useState<StaffProfile | null>(null)
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState<string | null>(null)
   const [loggingIn, setLoggingIn] = useState(false)
+  const [payOrder, setPayOrder] = useState<Order | null>(null)
 
   const [orders, setOrders] = useState<Order[]>([])
   const [archive, setArchive] = useState<Order[]>([])
@@ -636,7 +701,9 @@ export default function DashboardPage() {
   const knownIdsRef = useRef<Set<string>>(new Set())
   const readyForSoundRef = useRef(false)
 
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = profile ? isAdminRole(profile.role) : false
+  const isKitchen = profile ? isKitchenRole(profile.role) : false
+  const isWaitress = profile ? isWaitressRole(profile.role) : false
 
   const staffLabel = useCallback(
     (id?: string | null) => {
@@ -692,7 +759,7 @@ export default function DashboardPage() {
     e.preventDefault()
     setLoggingIn(true)
     setLoginError(null)
-    const { error: err } = await signInWithEmail(email, password)
+    const { error: err } = await signInWithUsername(username, password)
     if (err) {
       setLoggingIn(false)
       setLoginError(err)
@@ -976,7 +1043,7 @@ export default function DashboardPage() {
 
   const completed = useMemo(() => {
     let list = activeOrders.filter((o) => o.status === 'done')
-    if (!isAdmin && profile) {
+    if (isKitchen && !isAdmin && profile) {
       list = list.filter((o) => o.completed_by === profile.id)
     }
     return list.sort(
@@ -984,11 +1051,11 @@ export default function DashboardPage() {
         new Date(b.completed_at || b.created_at).getTime() -
         new Date(a.completed_at || a.created_at).getTime()
     )
-  }, [activeOrders, isAdmin, profile])
+  }, [activeOrders, isAdmin, isKitchen, profile])
 
   const cancelled = useMemo(() => {
     let list = activeOrders.filter((o) => o.status === 'cancelled')
-    if (!isAdmin && profile) {
+    if (isKitchen && !isAdmin && profile) {
       list = list.filter((o) => o.completed_by === profile.id)
     }
     return list.sort(
@@ -996,7 +1063,29 @@ export default function DashboardPage() {
         new Date(b.completed_at || b.created_at).getTime() -
         new Date(a.completed_at || a.created_at).getTime()
     )
-  }, [activeOrders, isAdmin, profile])
+  }, [activeOrders, isAdmin, isKitchen, profile])
+
+  const openBills = useMemo(
+    () =>
+      activeOrders
+        .filter(isOpenBill)
+        .sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        ),
+    [activeOrders]
+  )
+
+  const kitchenPending = useMemo(
+    () =>
+      activeOrders
+        .filter(isKitchenPending)
+        .sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        ),
+    [activeOrders]
+  )
 
   const dailyRevenue = useMemo(
     () =>
@@ -1065,16 +1154,17 @@ export default function DashboardPage() {
         <form className="pin-card login-card" onSubmit={handleLogin}>
           <h1>{sq.staffAccess}</h1>
           <p>{sq.staffHint}</p>
-          <label className="field-label" htmlFor="email">
-            {sq.email}
+          <label className="field-label" htmlFor="username">
+            {sq.username}
           </label>
           <input
-            id="email"
-            type="email"
+            id="username"
+            type="text"
             autoComplete="username"
             className="text-input"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder={sq.usernamePlaceholder}
             required
             autoFocus
           />
@@ -1115,9 +1205,8 @@ export default function DashboardPage() {
             {pending.length} {sq.pending}
           </span>
           <span className={`role-pill role-${profile.role}`}>
-            {profile.display_name ||
-              profile.email.split('@')[0] ||
-              (profile.role === 'admin' ? sq.roleAdmin : sq.roleWorker)}
+            {roleLabelSq(profile.role)}
+            {profile.display_name ? ` · ${profile.display_name}` : ''}
           </span>
         </div>
         <div className="dashboard-stats">
@@ -1156,15 +1245,27 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {isAdmin && (
+      {(isAdmin || isWaitress || isKitchen) && (
         <nav className="dashboard-tabs">
           {(
             [
-              ['live', sq.liveBoard],
-              ['sales', sq.salesHistory],
-              ['speed', sq.performance],
-              ['team', sq.team],
-              ['archive', sq.archiveTab],
+              [
+                'live',
+                isAdmin
+                  ? sq.liveBoard
+                  : isWaitress
+                    ? sq.floorBoard
+                    : sq.kitchenBoard,
+              ] as const,
+              ...(isAdmin
+                ? ([
+                    ['sales', sq.salesHistory],
+                    ['speed', sq.performance],
+                    ['team', sq.team],
+                    ['archive', sq.archiveTab],
+                    ['settings', sq.settingsTab],
+                  ] as const)
+                : []),
             ] as const
           ).map(([key, label]) => (
             <button
@@ -1195,96 +1296,198 @@ export default function DashboardPage() {
       <main className="dashboard-main">
         {tab === 'live' && (
           <>
-            <div className="live-toolbar">
-              <button
-                type="button"
-                className="btn btn-primary manual-open-btn"
-                onClick={() => setManualOpen(true)}
-              >
-                {sq.addManual}
-              </button>
-            </div>
+            {(isAdmin || isWaitress) && (
+              <div className="live-toolbar">
+                <button
+                  type="button"
+                  className="btn btn-primary manual-open-btn"
+                  onClick={() => setManualOpen(true)}
+                >
+                  {sq.addManual}
+                </button>
+                <p className="live-hint">{sq.addToTable}</p>
+              </div>
+            )}
 
-            <section className="dashboard-section">
-              <h2 className="section-label">{sq.active}</h2>
-              {loading ? (
-                <p className="empty-state">{sq.loading}</p>
-              ) : pending.length === 0 ? (
-                <p className="empty-state">{sq.noPending}</p>
-              ) : (
-                <div className="order-grid">
-                  {pending.map((order) => (
-                    <OrderCard
-                      key={order.id}
-                      order={order}
-                      variant="pending"
-                      onDone={handleDone}
-                      onCancel={handleCancel}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
+            {/* Barista (shankist): kitchen only */}
+            {isKitchen && !isAdmin && (
+              <>
+                <p className="board-role-hint">{sq.kitchenHint}</p>
+                <section className="dashboard-section">
+                  <h2 className="section-label">
+                    {sq.kitchenBoard}
+                    <span className="section-count">
+                      {kitchenPending.length}
+                    </span>
+                  </h2>
+                  {loading ? (
+                    <p className="empty-state">{sq.loading}</p>
+                  ) : kitchenPending.length === 0 ? (
+                    <p className="empty-state">{sq.noPending}</p>
+                  ) : (
+                    <div className="order-grid">
+                      {kitchenPending.map((order) => (
+                        <OrderCard
+                          key={order.id}
+                          order={order}
+                          variant="pending"
+                          onDone={handleDone}
+                          doneLabel={sq.markReady}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
 
-            <section className="dashboard-section">
-              <button
-                type="button"
-                className="section-toggle"
-                onClick={() => setShowCompleted((v) => !v)}
-              >
-                <h2 className="section-label">
-                  {sq.completedToday}
-                  <span className="section-count">{completed.length}</span>
-                </h2>
-                <span className="chevron">{showCompleted ? '▾' : '▸'}</span>
-              </button>
-              {showCompleted &&
-                (completed.length === 0 ? (
-                  <p className="empty-state">{sq.noCompleted}</p>
-                ) : (
-                  <div className="order-list">
-                    {completed.map((order) => (
-                      <OrderCard
-                        key={order.id}
-                        order={order}
-                        variant="done"
-                        staffName={staffLabel(order.completed_by)}
-                        onArchive={isAdmin ? handleArchive : undefined}
-                      />
+            {/* Waitress (kamerier): open bills until paid */}
+            {isWaitress && !isAdmin && (
+              <>
+                <p className="board-role-hint">{sq.floorHint}</p>
+                <section className="dashboard-section">
+                  <h2 className="section-label">
+                    {sq.unpaidBills}
+                    <span className="section-count">{openBills.length}</span>
+                  </h2>
+                  {loading ? (
+                    <p className="empty-state">{sq.loading}</p>
+                  ) : openBills.length === 0 ? (
+                    <p className="empty-state">{sq.noUnpaid}</p>
+                  ) : (
+                    <div className="order-grid">
+                      {openBills.map((order) => (
+                        <OrderCard
+                          key={order.id}
+                          order={order}
+                          variant="bill"
+                          onPay={(o) => setPayOrder(o)}
+                          onCancel={handleCancel}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
+
+            {/* Admin: kitchen + bills + history */}
+            {isAdmin && (
+              <>
+                <section className="dashboard-section">
+                  <h2 className="section-label">
+                    {sq.kitchenBoard}
+                    <span className="section-count">
+                      {kitchenPending.length}
+                    </span>
+                  </h2>
+                  {loading ? (
+                    <p className="empty-state">{sq.loading}</p>
+                  ) : kitchenPending.length === 0 ? (
+                    <p className="empty-state">{sq.noPending}</p>
+                  ) : (
+                    <div className="order-grid">
+                      {kitchenPending.map((order) => (
+                        <OrderCard
+                          key={`k-${order.id}`}
+                          order={order}
+                          variant="pending"
+                          onDone={handleDone}
+                          onCancel={handleCancel}
+                          doneLabel={sq.markReady}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="dashboard-section">
+                  <h2 className="section-label">
+                    {sq.unpaidBills}
+                    <span className="section-count">{openBills.length}</span>
+                  </h2>
+                  {openBills.length === 0 ? (
+                    <p className="empty-state">{sq.noUnpaid}</p>
+                  ) : (
+                    <div className="order-grid">
+                      {openBills.map((order) => (
+                        <OrderCard
+                          key={`b-${order.id}`}
+                          order={order}
+                          variant="bill"
+                          onPay={(o) => setPayOrder(o)}
+                          onCancel={handleCancel}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="dashboard-section">
+                  <button
+                    type="button"
+                    className="section-toggle"
+                    onClick={() => setShowCompleted((v) => !v)}
+                  >
+                    <h2 className="section-label">
+                      {sq.completedToday}
+                      <span className="section-count">{completed.length}</span>
+                    </h2>
+                    <span className="chevron">
+                      {showCompleted ? '▾' : '▸'}
+                    </span>
+                  </button>
+                  {showCompleted &&
+                    (completed.length === 0 ? (
+                      <p className="empty-state">{sq.noCompleted}</p>
+                    ) : (
+                      <div className="order-list">
+                        {completed.map((order) => (
+                          <OrderCard
+                            key={order.id}
+                            order={order}
+                            variant="done"
+                            staffName={staffLabel(order.completed_by)}
+                            onArchive={handleArchive}
+                          />
+                        ))}
+                      </div>
                     ))}
-                  </div>
-                ))}
-            </section>
+                </section>
 
-            <section className="dashboard-section">
-              <button
-                type="button"
-                className="section-toggle"
-                onClick={() => setShowCancelled((v) => !v)}
-              >
-                <h2 className="section-label">
-                  {sq.cancelledToday}
-                  <span className="section-count">{cancelled.length}</span>
-                </h2>
-                <span className="chevron">{showCancelled ? '▾' : '▸'}</span>
-              </button>
-              {showCancelled &&
-                (cancelled.length === 0 ? (
-                  <p className="empty-state">{sq.noCancelled}</p>
-                ) : (
-                  <div className="order-list">
-                    {cancelled.map((order) => (
-                      <OrderCard
-                        key={order.id}
-                        order={order}
-                        variant="cancelled"
-                        staffName={staffLabel(order.completed_by)}
-                        onArchive={isAdmin ? handleArchive : undefined}
-                      />
+                <section className="dashboard-section">
+                  <button
+                    type="button"
+                    className="section-toggle"
+                    onClick={() => setShowCancelled((v) => !v)}
+                  >
+                    <h2 className="section-label">
+                      {sq.cancelledToday}
+                      <span className="section-count">{cancelled.length}</span>
+                    </h2>
+                    <span className="chevron">
+                      {showCancelled ? '▾' : '▸'}
+                    </span>
+                  </button>
+                  {showCancelled &&
+                    (cancelled.length === 0 ? (
+                      <p className="empty-state">{sq.noCancelled}</p>
+                    ) : (
+                      <div className="order-list">
+                        {cancelled.map((order) => (
+                          <OrderCard
+                            key={order.id}
+                            order={order}
+                            variant="cancelled"
+                            staffName={staffLabel(order.completed_by)}
+                            onArchive={handleArchive}
+                          />
+                        ))}
+                      </div>
                     ))}
-                  </div>
-                ))}
-            </section>
+                </section>
+              </>
+            )}
           </>
         )}
 
@@ -1835,6 +2038,18 @@ export default function DashboardPage() {
             )}
           </section>
         )}
+
+        {tab === 'settings' && isAdmin && (
+          <AdminWipePanel
+            onWiped={() => {
+              setOrders([])
+              setArchive([])
+              setSalesOrders([])
+              setSessions([])
+              void loadOrders()
+            }}
+          />
+        )}
       </main>
 
       <ManualOrderModal
@@ -1842,6 +2057,20 @@ export default function DashboardPage() {
         onClose={() => setManualOpen(false)}
         onCreated={handleManualCreated}
       />
+
+      {payOrder && (
+        <PayBillModal
+          order={payOrder}
+          staffId={profile.id}
+          onClose={() => setPayOrder(null)}
+          onUpdated={(updated) => {
+            setOrders((prev) =>
+              prev.map((o) => (o.id === updated.id ? updated : o))
+            )
+            setPayOrder(isOrderFullyPaid(updated) ? null : updated)
+          }}
+        />
+      )}
     </div>
   )
 }
