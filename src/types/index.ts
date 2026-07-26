@@ -34,6 +34,18 @@ export interface Order {
   /** Fully settled with customer (waitress) */
   paid_at?: string | null
   paid_by?: string | null
+  /** Log of partial / full payments (kamerier) */
+  payment_events?: PaymentEvent[] | null
+}
+
+export interface PaymentEvent {
+  at: string
+  by?: string | null
+  amount: number
+  /** Equal split among N people (if used) */
+  people?: number | null
+  lines: { name: string; quantity: number; price: number }[]
+  note?: string | null
 }
 
 /**

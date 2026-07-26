@@ -1,6 +1,12 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { menu } from '../data/menu'
-import type { CartItem, Order, StaffProfile, StaffSession } from '../types'
+import type {
+  CartItem,
+  Order,
+  PaymentEvent,
+  StaffProfile,
+  StaffSession,
+} from '../types'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
@@ -408,8 +414,16 @@ async function orderSelectCols(): Promise<string> {
   let cols = ORDER_SELECT_BASE
   if (hasArchive) cols += ',archived_at'
   if (hasNote) cols += ',note'
-  if (hasPaid) cols += ',paid_at,paid_by'
+  if (hasPaid) cols += ',paid_at,paid_by,payment_events'
   return cols
+}
+
+function appendPaymentEvent(
+  order: Order,
+  event: PaymentEvent
+): PaymentEvent[] {
+  const prev = Array.isArray(order.payment_events) ? order.payment_events : []
+  return [...prev, event]
 }
 
 /**
@@ -521,51 +535,51 @@ export function applyPaySelection(
 
 export async function markOrderPaid(
   orderId: string,
-  staffUserId?: string | null
+  staffUserId?: string | null,
+  meta?: { people?: number | null; note?: string | null }
 ): Promise<{ data: Order | null; error: string | null }> {
-  // Full pay: set all paid_quantity = quantity
+  let order: Order | null = null
   if (!supabase) {
-    let updated: Order | null = null
-    writeDemoOrders(
-      readDemoOrders().map((o) => {
-        if (o.id !== orderId) return o
-        const items = o.items.map((i) => ({
-          ...i,
-          paid_quantity: i.quantity,
-        }))
-        updated = {
-          ...o,
-          items,
-          paid_at: new Date().toISOString(),
-          paid_by: staffUserId ?? null,
-        }
-        return updated
-      })
-    )
-    return { data: updated, error: null }
+    order = readDemoOrders().find((o) => o.id === orderId) ?? null
+  } else {
+    const cols = await orderSelectCols()
+    const { data, error: fetchErr } = await supabase
+      .from('orders')
+      .select(cols)
+      .eq('id', orderId)
+      .maybeSingle()
+    if (fetchErr) return { data: null, error: fetchErr.message }
+    order = (data as unknown as Order) ?? null
   }
+  if (!order) return { data: null, error: 'Porosia nuk u gjet' }
 
-  const cols = await orderSelectCols()
-  const { data: row, error: fetchErr } = await supabase
-    .from('orders')
-    .select(cols)
-    .eq('id', orderId)
-    .maybeSingle()
-  if (fetchErr) return { data: null, error: fetchErr.message }
-  if (!row) return { data: null, error: 'Porosia nuk u gjet' }
-
-  const order = row as unknown as Order
+  const lines = order.items
+    .map((i) => {
+      const unpaid = lineUnpaidQty(i)
+      if (unpaid <= 0) return null
+      return { name: i.name, quantity: unpaid, price: i.price }
+    })
+    .filter(Boolean) as PaymentEvent['lines']
+  const amount = lines.reduce((s, l) => s + l.price * l.quantity, 0)
+  const now = new Date().toISOString()
+  const event: PaymentEvent = {
+    at: now,
+    by: staffUserId ?? null,
+    amount,
+    people: meta?.people ?? null,
+    lines,
+    note: meta?.note ?? 'Paguar plotësisht',
+  }
   const items = order.items.map((i) => ({
     ...i,
     paid_quantity: i.quantity,
   }))
-  const now = new Date().toISOString()
   const patch: Partial<Order> = {
     items,
     paid_at: now,
     paid_by: staffUserId ?? null,
+    payment_events: appendPaymentEvent(order, event),
   }
-  // If kitchen never marked done, mark done on full pay
   if (order.status === 'pending') {
     patch.status = 'done'
     patch.completed_at = now
@@ -574,6 +588,13 @@ export async function markOrderPaid(
 
   const { error } = await patchOrder(orderId, patch)
   if (error) {
+    if (error.toLowerCase().includes('payment_events')) {
+      const { payment_events: _pe, ...rest } = patch
+      void _pe
+      const retry = await patchOrder(orderId, rest)
+      if (retry.error) return { data: null, error: retry.error }
+      return { data: { ...order, ...rest }, error: null }
+    }
     if (error.toLowerCase().includes('paid_at')) {
       return {
         data: null,
@@ -589,56 +610,80 @@ export async function markOrderPaid(
 export async function markPartialPay(
   orderId: string,
   selection: PaySelection,
-  staffUserId?: string | null
+  staffUserId?: string | null,
+  meta?: { people?: number | null; note?: string | null }
 ): Promise<{ data: Order | null; error: string | null; paidAmount: number }> {
+  let order: Order | null = null
   if (!supabase) {
-    let paidAmount = 0
-    let updated: Order | null = null
-    writeDemoOrders(
-      readDemoOrders().map((o) => {
-        if (o.id !== orderId) return o
-        const result = applyPaySelection(o, selection)
-        paidAmount = result.paidAmount
-        updated = {
-          ...o,
-          items: result.items,
-          paid_at: result.fullyPaid ? new Date().toISOString() : o.paid_at,
-          paid_by: result.fullyPaid ? staffUserId ?? null : o.paid_by,
-        }
-        return updated
-      })
-    )
-    return { data: updated, error: null, paidAmount }
+    order = readDemoOrders().find((o) => o.id === orderId) ?? null
+  } else {
+    const cols = await orderSelectCols()
+    const { data, error: fetchErr } = await supabase
+      .from('orders')
+      .select(cols)
+      .eq('id', orderId)
+      .maybeSingle()
+    if (fetchErr) return { data: null, error: fetchErr.message, paidAmount: 0 }
+    order = (data as unknown as Order) ?? null
   }
+  if (!order) return { data: null, error: 'Porosia nuk u gjet', paidAmount: 0 }
 
-  const cols = await orderSelectCols()
-  const { data: row, error: fetchErr } = await supabase
-    .from('orders')
-    .select(cols)
-    .eq('id', orderId)
-    .maybeSingle()
-  if (fetchErr) return { data: null, error: fetchErr.message, paidAmount: 0 }
-  if (!row) return { data: null, error: 'Porosia nuk u gjet', paidAmount: 0 }
-
-  const order = row as unknown as Order
   const result = applyPaySelection(order, selection)
   if (result.paidAmount <= 0) {
     return { data: order, error: 'Zgjidh diçka për pagesë', paidAmount: 0 }
   }
 
-  const patch: Partial<Order> = { items: result.items }
+  const eventLines: PaymentEvent['lines'] = []
+  for (const line of order.items) {
+    const want = Math.floor(Number(selection[line.name] ?? 0))
+    const payNow = Math.max(0, Math.min(lineUnpaidQty(line), want))
+    if (payNow > 0) {
+      eventLines.push({
+        name: line.name,
+        quantity: payNow,
+        price: line.price,
+      })
+    }
+  }
+  const now = new Date().toISOString()
+  const event: PaymentEvent = {
+    at: now,
+    by: staffUserId ?? null,
+    amount: result.paidAmount,
+    people: meta?.people ?? null,
+    lines: eventLines,
+    note: meta?.note ?? 'Pagesë e pjesshme',
+  }
+
+  const patch: Partial<Order> = {
+    items: result.items,
+    payment_events: appendPaymentEvent(order, event),
+  }
   if (result.fullyPaid) {
-    patch.paid_at = new Date().toISOString()
+    patch.paid_at = now
     patch.paid_by = staffUserId ?? null
     if (order.status === 'pending') {
       patch.status = 'done'
-      patch.completed_at = patch.paid_at
+      patch.completed_at = now
       patch.completed_by = staffUserId ?? null
     }
   }
 
   const { error } = await patchOrder(orderId, patch)
-  if (error) return { data: null, error, paidAmount: 0 }
+  if (error) {
+    if (error.toLowerCase().includes('payment_events')) {
+      const { payment_events: _pe, ...rest } = patch
+      void _pe
+      const retry = await patchOrder(orderId, rest)
+      if (retry.error) return { data: null, error: retry.error, paidAmount: 0 }
+      return {
+        data: { ...order, ...rest },
+        error: null,
+        paidAmount: result.paidAmount,
+      }
+    }
+    return { data: null, error, paidAmount: 0 }
+  }
   return {
     data: { ...order, ...patch },
     error: null,
@@ -871,6 +916,7 @@ async function patchOrder(
   if (!hasPaid) {
     delete safePatch.paid_at
     delete safePatch.paid_by
+    delete safePatch.payment_events
   }
 
   const { error } = await supabase.from('orders').update(safePatch).eq('id', orderId)
