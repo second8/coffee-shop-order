@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { menu, MENU_TITLE, SHOP_NAME } from '../data/menu'
 import {
@@ -14,16 +14,18 @@ import type { CartItem } from '../types'
 
 type Screen = 'menu' | 'review' | 'confirmation'
 
+function catId(name: string) {
+  return `cat-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+}
+
 export default function OrderPage() {
   const [searchParams] = useSearchParams()
   const tableParam = searchParams.get('table')
-  // Accept client / c / name query keys (QR uses ?client=)
   const clientRaw =
     searchParams.get('client') ||
     searchParams.get('c') ||
     searchParams.get('name')
   const clientName = clientRaw ? sanitizeClientName(clientRaw) : null
-  // If sanitize rejected but raw looks like a name, still use a trimmed version
   const clientNameLoose =
     clientName ||
     (clientRaw
@@ -45,6 +47,7 @@ export default function OrderPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [note, setNote] = useState('')
+  const [activeCat, setActiveCat] = useState(menu.categories[0]?.name ?? '')
   const submitLock = useRef(false)
   const [lastOrder, setLastOrder] = useState<{
     items: CartItem[]
@@ -55,6 +58,43 @@ export default function OrderPage() {
   const belowMin =
     isClientDest && cart.itemCount > 0 && cart.total < CLIENT_MIN_ORDER_EUR
   const minRemaining = Math.max(0, CLIENT_MIN_ORDER_EUR - cart.total)
+
+  const destLabel = isClientDest
+    ? resolvedClient!
+    : `${sq.table} ${tableNumber}`
+
+  useEffect(() => {
+    if (screen !== 'menu') return
+    const sections = menu.categories
+      .map((c) => document.getElementById(catId(c.name)))
+      .filter(Boolean) as HTMLElement[]
+    if (sections.length === 0) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
+        if (visible?.target?.id) {
+          const name = menu.categories.find(
+            (c) => catId(c.name) === visible.target.id
+          )?.name
+          if (name) setActiveCat(name)
+        }
+      },
+      { rootMargin: '-20% 0px -55% 0px', threshold: [0.1, 0.35, 0.6] }
+    )
+    sections.forEach((el) => observer.observe(el))
+    return () => observer.disconnect()
+  }, [screen])
+
+  const scrollToCat = (name: string) => {
+    setActiveCat(name)
+    document.getElementById(catId(name))?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  }
 
   const handleSubmit = async () => {
     if (cart.items.length === 0 || submitting || submitLock.current) return
@@ -95,35 +135,37 @@ export default function OrderPage() {
 
   if (!hasValidDest) {
     return (
-      <div className="order-page order-error-page">
-        <div className="order-error-card">
-          <div className="order-error-icon" aria-hidden>
-            ⌗
-          </div>
-          <h1>{sq.tableNotFound}</h1>
-          <p>{sq.tableNotFoundHint}</p>
-        </div>
+      <div className="phm-order">
+        <header className="phm-topnav">
+          <span className="phm-wordmark">PHM</span>
+        </header>
+        <div className="phm-checkered" aria-hidden />
+        <section className="phm-error-panel">
+          <p className="phm-caption">Error</p>
+          <h1 className="phm-section-title">{sq.tableNotFound}</h1>
+          <p className="phm-body-copy">{sq.tableNotFoundHint}</p>
+        </section>
       </div>
     )
   }
 
   if (screen === 'confirmation') {
     return (
-      <div className="order-page order-confirm-page">
-        <div className="order-confirm-card">
-          <div className="order-confirm-check" aria-hidden>
-            ✓
-          </div>
-          <h1>{sq.orderSent}</h1>
-          <p className="order-confirm-sub">
+      <div className="phm-order phm-confirm">
+        <div className="phm-confirm-panel">
+          <p className="phm-caption phm-caption--on-gold">OK</p>
+          <h1 className="phm-display-title phm-display-title--sm">
+            {sq.orderSent}
+          </h1>
+          <p className="phm-hero-lead">
             {isClientDest
               ? sq.bringToOffice(resolvedClient!)
               : sq.bringToTable()}
           </p>
           {lastOrder && (
-            <div className="order-confirm-summary">
+            <div className="phm-confirm-lines">
               {lastOrder.items.map((item) => (
-                <div key={item.name} className="order-confirm-line">
+                <div key={item.name} className="phm-confirm-line">
                   <span>
                     {item.quantity}× {item.name}
                   </span>
@@ -131,11 +173,11 @@ export default function OrderPage() {
                 </div>
               ))}
               {lastOrder.note && (
-                <p className="order-confirm-note">
+                <p className="phm-confirm-note">
                   <strong>{sq.noteLabel}:</strong> {lastOrder.note}
                 </p>
               )}
-              <div className="order-confirm-total">
+              <div className="phm-confirm-total">
                 <span>{sq.total}</span>
                 <span>{formatEuro(lastOrder.total)}</span>
               </div>
@@ -143,7 +185,7 @@ export default function OrderPage() {
           )}
           <button
             type="button"
-            className="btn btn-primary btn-block"
+            className="phm-pill-btn phm-pill-btn--ink"
             onClick={() => {
               setLastOrder(null)
               setSubmitError(null)
@@ -154,6 +196,7 @@ export default function OrderPage() {
             {sq.orderAgain}
           </button>
         </div>
+        <div className="phm-checkered phm-checkered--tall" aria-hidden />
       </div>
     )
   }
@@ -161,50 +204,56 @@ export default function OrderPage() {
   if (screen === 'review') {
     return (
       <div
-        className={`order-page order-review-page ${isClientDest ? 'is-client-dest' : ''}`}
+        className={`phm-order phm-review ${isClientDest ? 'is-client-dest' : ''}`}
       >
-        <header className="order-header">
+        <header className="phm-topnav">
           <button
             type="button"
-            className="back-link"
+            className="phm-nav-link phm-nav-btn"
             onClick={() => setScreen('menu')}
           >
             {sq.backToMenu}
           </button>
-          <h1 className="review-title">{sq.yourOrder}</h1>
-          {isClientDest && (
-            <p className="client-dest-banner">
-              {sq.officeOrder} · {resolvedClient}
-            </p>
-          )}
+          <span className="phm-topnav-meta">{destLabel}</span>
         </header>
+        <div className="phm-checkered" aria-hidden />
 
-        <main className="review-main review-main-scroll">
+        <section className="phm-hero-ink">
+          <p className="phm-caption phm-caption--on-ink">{sq.yourOrder}</p>
+          <h1 className="phm-section-title phm-section-title--on-ink">
+            {destLabel}
+          </h1>
+          {isClientDest && (
+            <p className="phm-client-tag">{sq.officeOrder}</p>
+          )}
+        </section>
+
+        <main className="phm-review-body">
           {cart.items.length === 0 ? (
-            <p className="empty-cart">{sq.emptyCart}</p>
+            <p className="phm-empty">{sq.emptyCart}</p>
           ) : (
-            <ul className="review-list">
+            <ul className="phm-review-list">
               {cart.items.map((item) => (
-                <li key={item.name} className="review-item">
-                  <div className="review-item-info">
-                    <span className="review-item-name">{item.name}</span>
-                    <span className="review-item-price">
-                      {formatEuro(item.price)}
+                <li key={item.name} className="phm-review-row">
+                  <div className="phm-review-row-top">
+                    <span className="phm-item-name">{item.name}</span>
+                    <span className="phm-item-price">
+                      {formatEuro(item.price * item.quantity)}
                     </span>
                   </div>
-                  <div className="qty-controls qty-controls-lg">
+                  <div className="phm-qty-row">
                     <button
                       type="button"
-                      className="qty-btn qty-btn-lg"
+                      className="phm-qty"
                       aria-label={`Ul ${item.name}`}
                       onClick={() => cart.removeItem(item.name)}
                     >
                       −
                     </button>
-                    <span className="qty-value qty-value-lg">{item.quantity}</span>
+                    <span className="phm-qty-val">{item.quantity}</span>
                     <button
                       type="button"
-                      className="qty-btn qty-btn-lg"
+                      className="phm-qty"
                       aria-label={`Shto ${item.name}`}
                       onClick={() =>
                         cart.addItem({ name: item.name, price: item.price })
@@ -212,10 +261,10 @@ export default function OrderPage() {
                     >
                       +
                     </button>
+                    <span className="phm-unit-price">
+                      {formatEuro(item.price)} / copë
+                    </span>
                   </div>
-                  <span className="review-item-total">
-                    {formatEuro(item.price * item.quantity)}
-                  </span>
                 </li>
               ))}
             </ul>
@@ -223,14 +272,14 @@ export default function OrderPage() {
 
           {cart.items.length > 0 && (
             <>
-              <div className="order-note-field">
-                <label className="order-note-label" htmlFor="order-note">
+              <div className="phm-note-block">
+                <label className="phm-caption" htmlFor="order-note">
                   {sq.orderNote}
                 </label>
-                <p className="order-note-hint">{sq.orderNoteHint}</p>
+                <p className="phm-note-hint">{sq.orderNoteHint}</p>
                 <textarea
                   id="order-note"
-                  className="order-note-input"
+                  className="phm-note-input"
                   rows={3}
                   maxLength={280}
                   placeholder={sq.orderNotePlaceholder}
@@ -240,97 +289,136 @@ export default function OrderPage() {
                 />
               </div>
 
-              <div className="review-submit-block">
-                <div className="review-total-row">
-                  <span>{sq.total}</span>
-                  <strong>{formatEuro(cart.total)}</strong>
-                </div>
-                {belowMin && (
-                  <p className="form-error client-min-hint">
-                    {sq.clientMinOrderNeed(
-                      CLIENT_MIN_ORDER_EUR,
-                      minRemaining
-                    )}
-                  </p>
-                )}
-                {submitError && <p className="form-error">{submitError}</p>}
-                <button
-                  type="button"
-                  className="btn btn-primary btn-block btn-lg"
-                  disabled={submitting || belowMin}
-                  onClick={() => void handleSubmit()}
-                >
-                  {submitting ? sq.sending : sq.placeOrder}
-                </button>
-              </div>
+              {belowMin && (
+                <p className="phm-form-error">
+                  {sq.clientMinOrderNeed(CLIENT_MIN_ORDER_EUR, minRemaining)}
+                </p>
+              )}
+              {submitError && (
+                <p className="phm-form-error">{submitError}</p>
+              )}
             </>
           )}
         </main>
+
+        {cart.items.length > 0 && (
+          <div className="phm-sticky-cta">
+            <div className="phm-sticky-meta">
+              <span>{sq.total}</span>
+              <strong>{formatEuro(cart.total)}</strong>
+            </div>
+            <button
+              type="button"
+              className="phm-full-cta"
+              disabled={submitting || belowMin}
+              onClick={() => void handleSubmit()}
+            >
+              {submitting ? sq.sending : `${sq.placeOrder}  →`}
+            </button>
+          </div>
+        )}
       </div>
     )
   }
 
+  /* ——— MENU (main ordering UX) ——— */
   return (
     <div
-      className={`order-page ${cart.itemCount > 0 ? 'has-cart-bar' : ''} ${isClientDest ? 'is-client-dest' : ''}`}
+      className={`phm-order ${cart.itemCount > 0 ? 'has-sticky-cta' : ''} ${isClientDest ? 'is-client-dest' : ''}`}
     >
-      <header className="order-header">
-        <div className="order-brand-text">
-          <p className="order-menu-kicker">{MENU_TITLE}</p>
-          <h1 className="order-shop-name">{SHOP_NAME}</h1>
+      <header className="phm-topnav phm-topnav--sticky">
+        <span className="phm-wordmark">PHM</span>
+        <div className="phm-topnav-meta-col">
+          <span className="phm-topnav-meta">{destLabel}</span>
           {isClientDest && (
-            <p className="client-dest-banner">
-              {sq.officeOrder} · {resolvedClient}
-            </p>
+            <span className="phm-client-chip">{sq.officeBadge}</span>
           )}
         </div>
       </header>
+      <div className="phm-checkered" aria-hidden />
 
-      <main className="menu-main">
+      <section className="phm-hero-gold">
+        <p className="phm-caption">{MENU_TITLE}</p>
+        <h1 className="phm-display-title phm-display-title--menu">
+          {SHOP_NAME}
+        </h1>
+        <p className="phm-hero-lead">
+          {isClientDest
+            ? `${sq.officeOrder} · ${resolvedClient}`
+            : `${sq.table} ${tableNumber}`}
+        </p>
+      </section>
+
+      <nav className="phm-cat-rail" aria-label="Kategoritë">
         {menu.categories.map((category) => (
-          <section key={category.name} className="menu-section">
-            <h2 className="menu-category">{category.name}</h2>
-            <ul className="menu-list">
+          <button
+            key={category.name}
+            type="button"
+            className={`phm-cat-chip ${activeCat === category.name ? 'is-active' : ''}`}
+            onClick={() => scrollToCat(category.name)}
+          >
+            {category.name}
+          </button>
+        ))}
+      </nav>
+
+      <main className="phm-menu">
+        {menu.categories.map((category) => (
+          <section
+            key={category.name}
+            id={catId(category.name)}
+            className="phm-cat-block"
+          >
+            <h2 className="phm-cat-heading">{category.name}</h2>
+            <ul className="phm-item-list">
               {category.items.map((item) => {
                 const qty = cart.getQuantity(item.name)
                 return (
-                  <li key={item.name} className="menu-row">
+                  <li
+                    key={item.name}
+                    className={`phm-item ${qty > 0 ? 'is-in-cart' : ''}`}
+                  >
                     <button
                       type="button"
-                      className={`menu-item ${qty > 0 ? 'is-selected' : ''}`}
+                      className="phm-item-main"
                       onClick={() => cart.addItem(item)}
                     >
-                      <span className="menu-item-name">{item.name}</span>
-                      <span className="menu-item-meta">
-                        <span className="menu-item-price">
-                          {formatEuro(item.price)}
-                        </span>
-                        {qty > 0 && (
-                          <span className="menu-item-badge">{qty}</span>
-                        )}
+                      <span className="phm-item-name">{item.name}</span>
+                      <span className="phm-item-price">
+                        {formatEuro(item.price)}
                       </span>
                     </button>
-                    {qty > 0 && (
-                      <div className="menu-item-actions">
+                    <div className="phm-item-actions">
+                      {qty > 0 ? (
+                        <>
+                          <button
+                            type="button"
+                            className="phm-qty"
+                            aria-label={`Hiq ${item.name}`}
+                            onClick={() => cart.removeItem(item.name)}
+                          >
+                            −
+                          </button>
+                          <span className="phm-qty-val">{qty}</span>
+                          <button
+                            type="button"
+                            className="phm-qty"
+                            aria-label={`Shto ${item.name}`}
+                            onClick={() => cart.addItem(item)}
+                          >
+                            +
+                          </button>
+                        </>
+                      ) : (
                         <button
                           type="button"
-                          className="qty-btn qty-btn-lg"
-                          aria-label={`Hiq ${item.name}`}
-                          onClick={() => cart.removeItem(item.name)}
-                        >
-                          −
-                        </button>
-                        <span className="qty-value qty-value-lg">{qty}</span>
-                        <button
-                          type="button"
-                          className="qty-btn qty-btn-lg"
-                          aria-label={`Shto ${item.name}`}
+                          className="phm-add"
                           onClick={() => cart.addItem(item)}
                         >
-                          +
+                          + Shto
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </li>
                 )
               })}
@@ -340,21 +428,25 @@ export default function OrderPage() {
       </main>
 
       {cart.itemCount > 0 && (
-        <button
-          type="button"
-          className={`cart-bar ${belowMin ? 'is-below-min' : ''}`}
-          onClick={() => setScreen('review')}
-        >
-          <span className="cart-bar-count">
-            {cart.itemCount}{' '}
-            {cart.itemCount === 1 ? sq.itemOne : sq.items}
-            {belowMin
-              ? ` · min €${CLIENT_MIN_ORDER_EUR}`
-              : ''}
-          </span>
-          <span className="cart-bar-total">{formatEuro(cart.total)}</span>
-          <span className="cart-bar-cta">{sq.viewOrder}</span>
-        </button>
+        <div className="phm-sticky-cta">
+          <button
+            type="button"
+            className={`phm-full-cta ${belowMin ? 'is-warn' : ''}`}
+            onClick={() => setScreen('review')}
+          >
+            <span className="phm-full-cta-left">
+              {sq.viewOrder}
+              <em>
+                {cart.itemCount}{' '}
+                {cart.itemCount === 1 ? sq.itemOne : sq.items}
+              </em>
+            </span>
+            <span className="phm-full-cta-right">
+              {formatEuro(cart.total)}
+              {belowMin ? ` · min €${CLIENT_MIN_ORDER_EUR}` : '  →'}
+            </span>
+          </button>
+        </div>
       )}
     </div>
   )
