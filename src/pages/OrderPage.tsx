@@ -137,11 +137,10 @@ export default function OrderPage() {
     return (
       <div className="phm-order">
         <header className="phm-topnav">
-          <span className="phm-wordmark">PHM</span>
+          <span className="phm-nav-label">PHM</span>
         </header>
-        <div className="phm-checkered" aria-hidden />
         <section className="phm-error-panel">
-          <p className="phm-caption">Error</p>
+          <p className="phm-label">Error</p>
           <h1 className="phm-section-title">{sq.tableNotFound}</h1>
           <p className="phm-body-copy">{sq.tableNotFoundHint}</p>
         </section>
@@ -153,7 +152,7 @@ export default function OrderPage() {
     return (
       <div className="phm-order phm-confirm">
         <div className="phm-confirm-panel">
-          <p className="phm-caption phm-caption--on-gold">OK</p>
+          <p className="phm-label">OK</p>
           <h1 className="phm-display-title phm-display-title--sm">
             {sq.orderSent}
           </h1>
@@ -196,7 +195,6 @@ export default function OrderPage() {
             {sq.orderAgain}
           </button>
         </div>
-        <div className="phm-checkered phm-checkered--tall" aria-hidden />
       </div>
     )
   }
@@ -209,20 +207,17 @@ export default function OrderPage() {
         <header className="phm-topnav">
           <button
             type="button"
-            className="phm-nav-link phm-nav-btn"
+            className="phm-nav-label phm-nav-btn"
             onClick={() => setScreen('menu')}
           >
             {sq.backToMenu}
           </button>
           <span className="phm-topnav-meta">{destLabel}</span>
         </header>
-        <div className="phm-checkered" aria-hidden />
 
-        <section className="phm-hero-ink">
-          <p className="phm-caption phm-caption--on-ink">{sq.yourOrder}</p>
-          <h1 className="phm-section-title phm-section-title--on-ink">
-            {destLabel}
-          </h1>
+        <section className="phm-hero-soft">
+          <p className="phm-label">{sq.yourOrder}</p>
+          <h1 className="phm-section-title">{destLabel}</h1>
           {isClientDest && (
             <p className="phm-client-tag">{sq.officeOrder}</p>
           )}
@@ -273,7 +268,7 @@ export default function OrderPage() {
           {cart.items.length > 0 && (
             <>
               <div className="phm-note-block">
-                <label className="phm-caption" htmlFor="order-note">
+                <label className="phm-label" htmlFor="order-note">
                   {sq.orderNote}
                 </label>
                 <p className="phm-note-hint">{sq.orderNoteHint}</p>
@@ -327,7 +322,7 @@ export default function OrderPage() {
       className={`phm-order ${cart.itemCount > 0 ? 'has-sticky-cta' : ''} ${isClientDest ? 'is-client-dest' : ''}`}
     >
       <header className="phm-topnav phm-topnav--sticky">
-        <span className="phm-wordmark">PHM</span>
+        <span className="phm-nav-label">PHM</span>
         <div className="phm-topnav-meta-col">
           <span className="phm-topnav-meta">{destLabel}</span>
           {isClientDest && (
@@ -335,10 +330,19 @@ export default function OrderPage() {
           )}
         </div>
       </header>
-      <div className="phm-checkered" aria-hidden />
 
-      <section className="phm-hero-gold">
-        <p className="phm-caption">{MENU_TITLE}</p>
+      <div className="phm-announce phm-announce--inline" role="note">
+        <span>{MENU_TITLE}</span>
+        <span className="phm-announce-sep">·</span>
+        <span>
+          {isClientDest
+            ? `${sq.officeOrder} · ${resolvedClient}`
+            : `${sq.table} ${tableNumber}`}
+        </span>
+      </div>
+
+      <section className="phm-hero-soft">
+        <p className="phm-eyebrow">{MENU_TITLE}</p>
         <h1 className="phm-display-title phm-display-title--menu">
           {SHOP_NAME}
         </h1>
