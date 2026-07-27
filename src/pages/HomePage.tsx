@@ -40,7 +40,7 @@ export default function HomePage() {
       </section>
 
       <section className="phm-home-cards">
-        <article className="phm-info-card">
+        <article className="phm-info-card phm-info-card--accent">
           <p className="phm-label">Coffee</p>
           <p className="phm-card-title">Espresso, iced &amp; more</p>
           <p className="phm-card-body">Fillimisht skanoni kodin QR të tavolinës suaj.</p>

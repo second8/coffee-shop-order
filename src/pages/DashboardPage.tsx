@@ -1352,109 +1352,129 @@ export default function DashboardPage() {
 
   if (authLoading) {
     return (
-      <div className="dashboard-pin-page">
-        <p style={{ color: '#a89888' }}>{sq.loading}</p>
+      <div className="phm-staff-login">
+        <p className="phm-label">{sq.loading}</p>
       </div>
     )
   }
 
   if (!profile) {
     return (
-      <div className="dashboard-pin-page">
-        <form className="pin-card login-card" onSubmit={handleLogin}>
-          <h1>{sq.staffAccess}</h1>
-          <p>{sq.staffHint}</p>
-          <label className="field-label" htmlFor="username">
+      <div className="phm-staff-login">
+        <header className="phm-topnav">
+          <span className="phm-nav-label">PHM</span>
+          <span className="phm-topnav-meta">{sq.staffAccess}</span>
+        </header>
+        <div className="phm-announce" role="note">
+          <span>{sq.staffHint}</span>
+        </div>
+        <form className="phm-login-card" onSubmit={handleLogin}>
+          <p className="phm-eyebrow">Staff</p>
+          <h1 className="phm-display-title phm-display-title--sm">
+            {sq.staffAccess}
+          </h1>
+          <label className="phm-label" htmlFor="username">
             {sq.username}
           </label>
           <input
             id="username"
             type="text"
             autoComplete="username"
-            className="text-input"
+            className="phm-staff-input"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder={sq.usernamePlaceholder}
             required
             autoFocus
           />
-          <label className="field-label" htmlFor="password">
+          <label className="phm-label" htmlFor="password">
             {sq.password}
           </label>
           <input
             id="password"
             type="password"
             autoComplete="current-password"
-            className="text-input"
+            className="phm-staff-input"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-          {loginError && <p className="form-error">{loginError}</p>}
+          {loginError && <p className="phm-form-error">{loginError}</p>}
           <button
             type="submit"
-            className="btn btn-primary btn-block"
+            className="phm-pill-btn phm-pill-btn--ink phm-login-submit"
             disabled={loggingIn}
           >
             {loggingIn ? sq.signingIn : sq.signIn}
           </button>
-          <p className="login-help">{sq.needAccount}</p>
+          <p className="phm-login-help">{sq.needAccount}</p>
         </form>
       </div>
     )
   }
 
   return (
-    <div className={`dashboard-page ${themeClass}`}>
-      <header className="dashboard-header">
-        <div className="dashboard-header-left">
-          <h1>{sq.orders}</h1>
-          <span className="pending-pill">
-            {pending.length} {sq.pending}
-          </span>
-          <span className={`role-pill role-${profile.role}`}>
-            {roleLabelSq(profile.role)}
-            {profile.display_name ? ` · ${profile.display_name}` : ''}
-          </span>
-        </div>
-        <div className="dashboard-stats">
-          {isAdmin && (
-            <>
-              <div className="stat">
-                <span className="stat-label">{sq.today}</span>
-                <span className="stat-value">
-                  {activeOrders.filter((o) => o.status === 'done').length}
-                </span>
+    <div className={`dashboard-page phm-dash ${themeClass}`}>
+      <header className="phm-dash-header">
+        <div className="phm-dash-header-top">
+          <div className="phm-dash-title-block">
+            <p className="phm-label phm-dash-kicker">PHM</p>
+            <h1 className="phm-dash-title">{sq.orders}</h1>
+            <div className="phm-dash-pills">
+              <span className="phm-pill-stat">
+                {pending.length} {sq.pending}
+              </span>
+              <span className={`phm-pill-role role-${profile.role}`}>
+                {roleLabelSq(profile.role)}
+                {profile.display_name ? ` · ${profile.display_name}` : ''}
+              </span>
+            </div>
+          </div>
+          <div className="phm-dash-actions">
+            {isAdmin && (
+              <div className="phm-dash-stats">
+                <div className="phm-stat">
+                  <span className="phm-stat-label">{sq.today}</span>
+                  <span className="phm-stat-value">
+                    {activeOrders.filter((o) => o.status === 'done').length}
+                  </span>
+                </div>
+                <div className="phm-stat">
+                  <span className="phm-stat-label">{sq.revenue}</span>
+                  <span className="phm-stat-value">
+                    {formatEuro(dailyRevenue)}
+                  </span>
+                </div>
               </div>
-              <div className="stat">
-                <span className="stat-label">{sq.revenue}</span>
-                <span className="stat-value">{formatEuro(dailyRevenue)}</span>
-              </div>
-            </>
-          )}
-          <button
-            type="button"
-            className={`sound-toggle ${soundEnabled ? 'is-on' : ''}`}
-            onClick={() => {
-              setSoundEnabled((v) => {
-                const next = !v
-                if (next) playNotificationSound()
-                return next
-              })
-            }}
-            aria-label={soundEnabled ? sq.soundOn : sq.soundOff}
-            title={soundEnabled ? sq.soundOn : sq.soundOff}
-          >
-            {soundEnabled ? '🔔' : '🔕'}
-          </button>
-          <button type="button" className="logout-btn" onClick={handleLogout}>
-            {sq.signOut}
-          </button>
+            )}
+            <button
+              type="button"
+              className={`phm-icon-btn ${soundEnabled ? 'is-on' : ''}`}
+              onClick={() => {
+                setSoundEnabled((v) => {
+                  const next = !v
+                  if (next) playNotificationSound()
+                  return next
+                })
+              }}
+              aria-label={soundEnabled ? sq.soundOn : sq.soundOff}
+              title={soundEnabled ? sq.soundOn : sq.soundOff}
+            >
+              {soundEnabled ? '🔔' : '🔕'}
+            </button>
+            <button
+              type="button"
+              className="phm-text-link phm-logout"
+              onClick={handleLogout}
+            >
+              {sq.signOut}
+            </button>
+          </div>
         </div>
       </header>
 
       {(isAdmin || isWaitress || isKitchen) && (
-        <nav className="dashboard-tabs">
+        <nav className="phm-dash-tabs" aria-label="Dashboard">
           {(
             [
               [
@@ -1480,7 +1500,7 @@ export default function DashboardPage() {
             <button
               key={key}
               type="button"
-              className={`dash-tab ${tab === key ? 'is-active' : ''}`}
+              className={`phm-dash-tab ${tab === key ? 'is-active' : ''}`}
               onClick={() => {
                 setTab(key)
                 if (key !== 'speed') setSpeedWorkerId(null)
