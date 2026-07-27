@@ -61,7 +61,7 @@ export default function StickersPanel() {
           width: 280,
           margin: 1,
           errorCorrectionLevel: 'M',
-          color: { dark: '#332d29', light: '#ffffff' },
+          color: { dark: '#0f0f0f', light: '#ffffff' },
         })
         next.push({ kind: 'table', table, dataUrl })
       }
@@ -72,7 +72,7 @@ export default function StickersPanel() {
           width: 280,
           margin: 1,
           errorCorrectionLevel: 'M',
-          color: { dark: '#332d29', light: '#fff8ef' },
+          color: { dark: '#0f0f0f', light: '#ffffff' },
         })
         next.push({
           kind: 'client',
