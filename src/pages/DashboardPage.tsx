@@ -244,72 +244,80 @@ function OrderCard({
     order.items.some((i) => lineUnpaidQty(i) < i.quantity && lineUnpaidQty(i) > 0) ||
     order.items.some((i) => (i.paid_quantity ?? 0) > 0 && !isOrderFullyPaid(order))
 
+  // Status as Figma-style brown label — not colored left borders
+  const statusLabel =
+    variant === 'pending'
+      ? sq.pending
+      : variant === 'bill'
+        ? kitchenReady
+          ? sq.readyToPay
+          : sq.waitingKitchen
+        : variant === 'paid'
+          ? sq.paidLine
+          : variant === 'cancelled'
+            ? sq.cancelled
+            : variant === 'archive'
+              ? sq.archive
+              : sq.markReady
+
+  const waitText =
+    variant === 'pending' || variant === 'bill'
+      ? mins === 0
+        ? formatRelativeTime(order.created_at)
+        : `${mins} min · ${sq.waiting}`
+      : formatTime(order.completed_at || order.created_at)
+
+  const title = clientOrder
+    ? destLabel
+    : `${sq.table} ${order.table_number}`
+
+  const amount =
+    variant === 'bill' ? formatEuro(owed) : formatEuro(Number(order.total))
+
   return (
     <article
       className={[
-        'order-card',
-        clientOrder ? 'is-client-order' : '',
-        variant === 'pending' ? '' : 'is-done',
-        variant === 'cancelled' ? 'is-cancelled' : '',
-        variant === 'archive' ? 'is-archive' : '',
-        variant === 'bill' ? 'is-bill' : '',
-        variant === 'bill' && kitchenReady ? 'is-ready' : '',
-        variant === 'paid' ? 'is-paid' : '',
-        variant === 'pending' || (variant === 'bill' && !kitchenReady)
-          ? `priority-${priority}`
+        'phm-ticket',
+        clientOrder ? 'phm-ticket--client' : '',
+        variant === 'bill' && !kitchenReady ? 'phm-ticket--dim' : '',
+        priority === 'critical' &&
+        (variant === 'pending' || (variant === 'bill' && !kitchenReady))
+          ? 'phm-ticket--urgent'
           : '',
       ]
         .filter(Boolean)
         .join(' ')}
     >
-      <div className="order-card-top">
-        <div>
-          {clientOrder && (
-            <span className="client-order-badge">{sq.officeBadge}</span>
-          )}
-          <h2 className="order-card-table">
-            {clientOrder ? destLabel : `${sq.table} ${order.table_number}`}
-          </h2>
-          {(variant === 'pending' || variant === 'bill') && (
-            <span className={`wait-badge wait-${priority}`}>
-              {mins === 0
-                ? formatRelativeTime(order.created_at)
-                : `${mins} min · ${sq.waiting}`}
-              {variant === 'bill' && (
-                <>
-                  {' · '}
-                  {kitchenReady ? sq.readyKitchen : sq.waitingKitchen}
-                  {partial ? ` · ${sq.partialPaid}` : ''}
-                </>
-              )}
-            </span>
-          )}
+      <header className="phm-ticket-head">
+        <p className="phm-ticket-label">
+          {clientOrder ? `${sq.officeBadge} · ` : ''}
+          {statusLabel}
+          {variant === 'bill' && partial ? ` · ${sq.partialPaid}` : ''}
+        </p>
+        <div className="phm-ticket-title-row">
+          <h2 className="phm-ticket-title">{title}</h2>
+          <p className="phm-ticket-amount">{amount}</p>
         </div>
-        <div className="order-card-meta">
-          <span className="order-card-time">
-            {variant === 'pending' || variant === 'bill'
-              ? formatRelativeTime(order.created_at)
-              : formatTime(order.completed_at || order.created_at)}
-          </span>
-          <span className="order-card-total">
-            {variant === 'bill'
-              ? formatEuro(owed)
-              : formatEuro(Number(order.total))}
-          </span>
-        </div>
-      </div>
+        <p className="phm-ticket-meta">
+          {waitText}
+          {staffName &&
+            variant !== 'pending' &&
+            variant !== 'bill' &&
+            ` · ${sq.by} ${staffName}`}
+        </p>
+      </header>
 
       {details && (
-        <ul className="order-card-items">
+        <ul className="phm-ticket-lines">
           {order.items.map((item) => {
             const unpaid = lineUnpaidQty(item)
             return (
-              <li key={item.name}>
-                <span className="order-card-qty">{item.quantity}×</span>
-                <span>
+              <li key={item.name} className="phm-ticket-line">
+                <span className="phm-ticket-line-qty">{item.quantity}×</span>
+                <span className="phm-ticket-line-name">
                   {item.name}
                   {variant === 'bill' && unpaid < item.quantity && (
-                    <em className="item-paid-hint">
+                    <em className="phm-ticket-hint">
                       {' '}
                       ({item.quantity - unpaid} {sq.paidLine.toLowerCase()})
                     </em>
@@ -322,109 +330,83 @@ function OrderCard({
       )}
 
       {order.note && (
-        <p className="order-card-note">
-          <span className="order-card-note-label">{sq.noteLabel}</span>
+        <p className="phm-ticket-note">
+          <span className="phm-ticket-label">{sq.noteLabel}</span>
           {order.note}
         </p>
       )}
 
       {variant === 'paid' && (
-        <div className="paid-details">
+        <div className="phm-ticket-details">
           <p>
-            <span className="paid-k">{sq.paidAt}</span>{' '}
+            {sq.paidAt}:{' '}
             {order.paid_at
               ? `${formatTime(order.paid_at)} · ${new Date(order.paid_at).toLocaleDateString()}`
               : '—'}
           </p>
           {staffName && (
             <p>
-              <span className="paid-k">{sq.paidBy}</span> {staffName}
+              {sq.paidBy}: {staffName}
             </p>
           )}
           {order.completed_at && (
             <p>
-              <span className="paid-k">{sq.kitchenReadyAt}</span>{' '}
-              {formatTime(order.completed_at)}
+              {sq.kitchenReadyAt}: {formatTime(order.completed_at)}
             </p>
           )}
-          <p>
-            <span className="paid-k">{sq.fullTotal}</span>{' '}
-            {formatEuro(Number(order.total))}
-          </p>
           {order.payment_events && order.payment_events.length > 0 && (
-            <div className="payment-events">
-              <span className="paid-k">{sq.paymentHistory}</span>
-              <ul>
-                {order.payment_events.map((ev, i) => (
-                  <li key={`${ev.at}-${i}`}>
-                    <div>
-                      {formatTime(ev.at)} · {formatEuro(ev.amount)}
-                      {ev.people ? ` · ${sq.peopleSplit} ${ev.people}` : ''}
-                      {ev.note ? ` · ${ev.note}` : ''}
-                    </div>
-                    <div className="payment-event-lines">
-                      {ev.lines.map((l) => (
-                        <span key={`${l.name}-${l.quantity}`}>
-                          {l.quantity}× {l.name}
-                        </span>
-                      ))}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <ul className="phm-ticket-events">
+              {order.payment_events.map((ev, i) => (
+                <li key={`${ev.at}-${i}`}>
+                  {formatTime(ev.at)} · {formatEuro(ev.amount)}
+                  {ev.people ? ` · ${sq.peopleSplit} ${ev.people}` : ''}
+                  {ev.note ? ` · ${ev.note}` : ''}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}
 
-      {staffName &&
-        variant !== 'pending' &&
-        variant !== 'bill' &&
-        variant !== 'paid' && (
-          <p className="order-card-by">
-            {sq.by} <strong>{staffName}</strong>
-          </p>
-        )}
-
       {variant === 'cancelled' && order.cancel_reason && (
-        <p className="cancel-reason-line">
-          <span className="paid-k">{sq.cancelReasonLabel}</span>{' '}
+        <p className="phm-ticket-note">
+          <span className="phm-ticket-label">{sq.cancelReasonLabel}</span>
           {order.cancel_reason}
         </p>
       )}
 
-      <div className="order-card-actions">
+      <footer className="phm-ticket-actions">
         {variant === 'pending' && onDone && (
           <button
             type="button"
-            className="btn btn-done"
+            className="phm-ticket-primary"
             onClick={() => onDone(order.id)}
           >
             {doneLabel || sq.markReady}
           </button>
         )}
-        {variant === 'pending' && onCancel && (
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => onCancel(order.id)}
-          >
-            {sq.cancel}
-          </button>
-        )}
         {variant === 'bill' && onPay && (
           <button
             type="button"
-            className="btn btn-done"
+            className="phm-ticket-primary"
             onClick={() => onPay(order)}
           >
             {sq.pay}
           </button>
         )}
+        {variant === 'pending' && onCancel && (
+          <button
+            type="button"
+            className="phm-ticket-secondary"
+            onClick={() => onCancel(order.id)}
+          >
+            {sq.cancel}
+          </button>
+        )}
         {variant === 'bill' && onCancel && (
           <button
             type="button"
-            className="btn btn-ghost"
+            className="phm-ticket-secondary"
             onClick={() => onCancel(order.id)}
           >
             {sq.cancel}
@@ -434,18 +416,18 @@ function OrderCard({
           variant === 'cancelled' ||
           variant === 'paid') &&
           onArchive && (
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => onArchive(order.id)}
-          >
-            {sq.archive}
-          </button>
-        )}
+            <button
+              type="button"
+              className="phm-ticket-secondary"
+              onClick={() => onArchive(order.id)}
+            >
+              {sq.archive}
+            </button>
+          )}
         {variant === 'archive' && onRestore && (
           <button
             type="button"
-            className="btn btn-ghost"
+            className="phm-ticket-secondary"
             onClick={() => onRestore(order.id)}
           >
             {sq.restore}
@@ -454,7 +436,7 @@ function OrderCard({
         {variant === 'archive' && onDelete && (
           <button
             type="button"
-            className="btn btn-danger-ghost"
+            className="phm-ticket-secondary phm-ticket-danger"
             onClick={() => {
               if (window.confirm(sq.confirmDelete)) onDelete(order.id)
             }}
@@ -462,7 +444,7 @@ function OrderCard({
             {sq.deleteForever}
           </button>
         )}
-      </div>
+      </footer>
     </article>
   )
 }
@@ -2441,85 +2423,77 @@ function TableBillCard({
   return (
     <article
       className={[
-        'order-card is-bill',
-        isClientBill ? 'is-client-order' : '',
-        bill.allReady ? 'is-ready' : '',
-        bill.hasPending ? 'is-mixed' : '',
+        'phm-ticket phm-ticket--bill',
+        isClientBill ? 'phm-ticket--client' : '',
+        bill.hasPending && !bill.allReady ? 'phm-ticket--dim' : '',
       ]
         .filter(Boolean)
         .join(' ')}
     >
-      <div className="order-card-top">
-        <div>
-          {isClientBill && (
-            <span className="client-order-badge">{sq.officeBadge}</span>
-          )}
-          <h2 className="order-card-table">
+      <header className="phm-ticket-head">
+        <p className="phm-ticket-label">
+          {isClientBill ? `${sq.officeBadge} · ` : ''}
+          {bill.allReady ? sq.readyToPay : sq.inProgress}
+          {` · ${bill.readyCount}/${bill.ticketCount} ${sq.rounds}`}
+        </p>
+        <div className="phm-ticket-title-row">
+          <h2 className="phm-ticket-title">
             {isClientBill
               ? clientLabel || 'ZYRË / Klient'
               : `${sq.table} ${bill.table}`}
           </h2>
-          <span
-            className={`wait-badge ${bill.allReady ? 'wait-warm' : 'wait-hot'}`}
-          >
-            {bill.readyCount}/{bill.ticketCount} {sq.rounds} {sq.readyToPay}
-            {bill.hasPending ? ` · ${sq.inProgress}` : ''}
-          </span>
+          <p className="phm-ticket-amount">{formatEuro(bill.unpaid)}</p>
         </div>
-        <div className="order-card-meta">
-          <span className="order-card-time">
-            {formatRelativeTime(bill.newestAt)}
-          </span>
-          <span className="order-card-total">{formatEuro(bill.unpaid)}</span>
-        </div>
-      </div>
+        <p className="phm-ticket-meta">
+          {formatRelativeTime(bill.newestAt)}
+          {bill.hasPending ? ` · ${sq.kitchenStillWorking}` : ''}
+        </p>
+      </header>
 
-      <div className="round-list">
+      <div className="phm-ticket-rounds">
         {bill.orders.map((order, idx) => {
           const ready = order.status === 'done'
           return (
             <div
               key={order.id}
-              className={`round-block ${ready ? 'is-ready' : 'is-pending'}`}
+              className={`phm-round ${ready ? 'is-ready' : 'is-pending'}`}
             >
-              <div className="round-head">
-                <span>
-                  {sq.round} {bill.orders.length - idx}
-                </span>
-                <span className={`round-status ${ready ? 'ok' : 'wait'}`}>
-                  {ready ? sq.readyToPay : sq.inProgress}
-                </span>
-                <span className="round-time">
-                  {formatRelativeTime(order.created_at)}
-                </span>
-              </div>
-              <ul className="order-card-items">
+              <p className="phm-ticket-label">
+                {sq.round} {bill.orders.length - idx}
+                {' · '}
+                {ready ? sq.readyToPay : sq.inProgress}
+                {' · '}
+                {formatRelativeTime(order.created_at)}
+              </p>
+              <ul className="phm-ticket-lines">
                 {order.items.map((item) => (
-                  <li key={item.name}>
-                    <span className="order-card-qty">{item.quantity}×</span>
-                    <span>{item.name}</span>
+                  <li key={item.name} className="phm-ticket-line">
+                    <span className="phm-ticket-line-qty">
+                      {item.quantity}×
+                    </span>
+                    <span className="phm-ticket-line-name">{item.name}</span>
                   </li>
                 ))}
               </ul>
               {order.note && (
-                <p className="order-card-note round-note">{order.note}</p>
+                <p className="phm-ticket-note">{order.note}</p>
               )}
             </div>
           )
         })}
       </div>
 
-      <div className="order-card-actions">
+      <footer className="phm-ticket-actions">
         <button
           type="button"
-          className="btn btn-done"
+          className="phm-ticket-primary"
           disabled={bill.unpaid <= 0}
           onClick={onPay}
         >
           {sq.pay}
           {bill.unpaid > 0 ? ` · ${formatEuro(bill.unpaid)}` : ''}
         </button>
-      </div>
+      </footer>
     </article>
   )
 }

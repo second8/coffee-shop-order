@@ -5016,5 +5016,346 @@ code {
   color: var(--ink);
 }
 
-/* redeploy brand-ui-v4-full */
+/* ==========================================================================
+   PHM TICKETS — Figma card pattern (label → title → body → actions)
+   No multi-color left borders. Soft 10px cards, hairline #E4E4E4 only.
+   ========================================================================== */
+
+.dashboard-page.phm-dash .order-grid,
+.dashboard-page.phm-dash .order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.dashboard-page.phm-dash .dashboard-section {
+  margin-bottom: 2rem;
+}
+
+.dashboard-page.phm-dash .section-label,
+.dashboard-page.phm-dash.theme-admin .section-label {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  font-family: var(--font-body) !important;
+  font-size: 1rem !important;
+  font-weight: 400 !important;
+  letter-spacing: var(--tracking) !important;
+  color: var(--accent-brown) !important;
+  text-transform: none !important;
+  margin: 0 0 1rem !important;
+}
+
+.dashboard-page.phm-dash .section-count,
+.dashboard-page.phm-dash.theme-admin .section-count {
+  font-family: var(--font-body) !important;
+  font-size: 0.85rem !important;
+  padding: 0.2rem 0.55rem !important;
+  border-radius: 999px !important;
+  background: var(--brand-beige) !important;
+  color: var(--ink-muted) !important;
+  border: 1px solid var(--line) !important;
+}
+
+.dashboard-page.phm-dash .section-hint {
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+  margin: -0.5rem 0 1rem;
+  letter-spacing: var(--tracking);
+}
+
+.dashboard-page.phm-dash .empty-state,
+.dashboard-page.phm-dash.theme-admin .empty-state {
+  border: 1px solid var(--line) !important;
+  border-radius: 10px !important;
+  background: var(--paper) !important;
+  color: var(--ink-muted) !important;
+  padding: 1.75rem 1.25rem !important;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  letter-spacing: var(--tracking);
+}
+
+/* Ticket card — mirrors Figma news/info cards */
+.phm-ticket {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.35rem 1.25rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.phm-ticket--client {
+  background: var(--paper);
+  border-color: var(--line);
+}
+
+.phm-ticket--dim {
+  opacity: 0.72;
+}
+
+.phm-ticket--urgent .phm-ticket-meta {
+  color: var(--accent-deep);
+  font-weight: 500;
+}
+
+.phm-ticket-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  text-align: left;
+}
+
+.phm-ticket-label {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 400;
+  letter-spacing: var(--tracking);
+  line-height: 1.1;
+  color: var(--accent-brown);
+}
+
+.phm-ticket-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.phm-ticket-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(1.5rem, 4.5vw, 1.85rem);
+  line-height: 1.15;
+  letter-spacing: var(--tracking);
+  color: var(--ink);
+  flex: 1;
+}
+
+.phm-ticket-amount {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  line-height: 1.15;
+  letter-spacing: var(--tracking);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.phm-ticket-meta {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  letter-spacing: var(--tracking);
+  line-height: 1.15;
+  color: var(--ink-muted);
+}
+
+/* Item lines — Figma results list: hairline left #E4E4E4, not status color */
+.phm-ticket-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.phm-ticket-line {
+  display: flex;
+  gap: 0.65rem;
+  align-items: baseline;
+  padding: 0 0 0.55rem 0.85rem;
+  border-left: 1px solid var(--line);
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  line-height: 1.2;
+  letter-spacing: var(--tracking);
+  color: var(--ink);
+}
+
+.phm-ticket-line-qty {
+  flex-shrink: 0;
+  color: var(--ink-muted);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  min-width: 1.75rem;
+}
+
+.phm-ticket-line-name {
+  flex: 1;
+}
+
+.phm-ticket-hint {
+  font-style: normal;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.phm-ticket-note {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  background: var(--brand-beige);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  letter-spacing: var(--tracking);
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.phm-ticket-note .phm-ticket-label {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.phm-ticket-details {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  letter-spacing: var(--tracking);
+  color: var(--ink-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.phm-ticket-details p {
+  margin: 0;
+}
+
+.phm-ticket-events {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.phm-ticket-rounds {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.phm-round {
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--line);
+}
+
+.phm-round:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.phm-round.is-pending {
+  opacity: 0.65;
+}
+
+.phm-ticket-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  padding-top: 0.25rem;
+}
+
+.phm-ticket-primary {
+  flex: 1 1 auto;
+  min-width: 8rem;
+  min-height: 48px;
+  padding: 0.7rem 1.25rem;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: var(--tracking);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(193, 127, 74, 0.35);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.phm-ticket-primary:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.phm-ticket-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.phm-ticket-secondary {
+  background: none;
+  border: none;
+  padding: 0.35rem 0;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  letter-spacing: var(--tracking);
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.phm-ticket-secondary:hover {
+  color: var(--accent-deep);
+}
+
+.phm-ticket-danger {
+  color: var(--danger);
+}
+
+/* Kill legacy order-card chrome if any remnant class appears */
+.dashboard-page.phm-dash .order-card {
+  border-left: 1px solid var(--line) !important;
+  background: var(--paper) !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+
+.dashboard-page.phm-dash .order-card.priority-warm,
+.dashboard-page.phm-dash .order-card.priority-hot,
+.dashboard-page.phm-dash .order-card.priority-critical,
+.dashboard-page.phm-dash .order-card.is-bill,
+.dashboard-page.phm-dash .order-card.is-bill.is-ready,
+.dashboard-page.phm-dash .order-card.is-client-order {
+  border-left-color: var(--line) !important;
+  background: var(--paper) !important;
+  box-shadow: none !important;
+}
+
+/* Manual open + toolbar */
+.dashboard-page.phm-dash .live-toolbar {
+  margin-bottom: 1.25rem;
+}
+
+.dashboard-page.phm-dash .manual-open-btn {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 10px !important;
+  background: var(--ink) !important;
+  color: var(--paper) !important;
+  font-family: var(--font-body) !important;
+  letter-spacing: var(--tracking) !important;
+  text-transform: none !important;
+}
+
+.dashboard-page.phm-dash .manual-open-btn:hover:not(:disabled) {
+  background: var(--accent-deep) !important;
+}
+
+/* redeploy tickets-figma-v5 */
 
